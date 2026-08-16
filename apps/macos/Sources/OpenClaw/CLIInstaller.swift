@@ -317,8 +317,20 @@ enum CLIInstaller {
 
     private static func rememberValidated(_ status: Status) {
         guard case let .ready(location, version) = status else { return }
-        UserDefaults.standard.set(location, forKey: cliValidatedExecutableKey)
-        UserDefaults.standard.set(version, forKey: cliValidatedVersionKey)
+        // Guard against redundant writes: this is called on every CLI status
+        // probe (including from the node-mode connect loop's per-attempt
+        // worker setup). An unconditional write fires
+        // UserDefaults.didChangeNotification even when nothing changed,
+        // which observers (e.g. MacNodeModeCoordinator) treat as a settings
+        // change and use to invalidate in-flight connection attempts —
+        // starving the node connect loop in a tight, backoff-free retry spin.
+        let defaults = UserDefaults.standard
+        if defaults.string(forKey: cliValidatedExecutableKey) != location {
+            defaults.set(location, forKey: cliValidatedExecutableKey)
+        }
+        if defaults.string(forKey: cliValidatedVersionKey) != version {
+            defaults.set(version, forKey: cliValidatedVersionKey)
+        }
     }
 
     @discardableResult

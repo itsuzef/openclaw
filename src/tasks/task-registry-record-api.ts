@@ -154,6 +154,8 @@ export function createTaskRecord(params: {
   requesterOrigin?: TaskDeliveryState["requesterOrigin"];
   childSessionKey?: string;
   parentFlowId?: string;
+  expectedParentFlowRevision?: number;
+  expectedParentFlowControllerId?: string;
   parentTaskId?: string;
   agentId?: string;
   requesterAgentId?: string;
@@ -201,6 +203,8 @@ export function createTaskRecord(params: {
     ownerKey,
     scopeKind,
     parentFlowId: params.parentFlowId,
+    expectedRevision: params.expectedParentFlowRevision,
+    expectedControllerId: params.expectedParentFlowControllerId,
   });
   const existing = findExistingTaskForCreate({
     runtime: params.runtime,
@@ -272,7 +276,24 @@ export function createTaskRecord(params: {
         requesterOrigin,
       }
     : undefined;
-  if (!tryPersistTaskUpsert(record, "create", deliveryState)) {
+  // This is the last in-process guard before the synchronous durable write.
+  // SQLite-backed linked writes repeat it under the state transaction, so a
+  // changed managed flow cannot gain a child row after this check.
+  assertParentFlowLinkAllowed({
+    ownerKey,
+    scopeKind,
+    parentFlowId: params.parentFlowId,
+    expectedRevision: params.expectedParentFlowRevision,
+    expectedControllerId: params.expectedParentFlowControllerId,
+  });
+  if (
+    !tryPersistTaskUpsert(record, "create", deliveryState, {
+      flowId: params.parentFlowId,
+      ownerKey,
+      expectedRevision: params.expectedParentFlowRevision,
+      expectedControllerId: params.expectedParentFlowControllerId,
+    })
+  ) {
     return null;
   }
   tasks.set(taskId, record);

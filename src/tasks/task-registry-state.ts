@@ -166,8 +166,30 @@ export function tryPersistTaskUpsert(
   task: TaskRecord,
   operation: string,
   pendingDeliveryState?: TaskDeliveryState,
+  expectedFlow?: {
+    flowId?: string;
+    ownerKey: string;
+    expectedRevision?: number;
+    expectedControllerId?: string;
+  },
 ): boolean {
   try {
+    if (expectedFlow?.flowId && expectedFlow.expectedRevision !== undefined) {
+      const linked = getTaskRegistryStore().upsertTaskWithDeliveryStateForFlow;
+      if (!linked) {
+        throw new Error("Task registry store does not support atomic managed-flow linkage");
+      }
+      return linked({
+        task,
+        deliveryState: pendingDeliveryState,
+        flow: {
+          flowId: expectedFlow.flowId,
+          ownerKey: expectedFlow.ownerKey,
+          expectedRevision: expectedFlow.expectedRevision,
+          expectedControllerId: expectedFlow.expectedControllerId,
+        },
+      });
+    }
     persistTaskUpsert(task, pendingDeliveryState);
     return true;
   } catch (error) {

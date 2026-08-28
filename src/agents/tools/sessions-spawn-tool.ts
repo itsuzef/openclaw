@@ -195,6 +195,13 @@ function createSessionsSpawnToolSchema(params: {
       description:
         "Native: omit/isolated clean; fork only needing requester transcript; visible fork requires same agent.",
     }),
+    flow: Type.Optional(
+      Type.Object({
+        flowId: Type.String(),
+        controllerId: Type.String(),
+        expectedRevision: Type.Integer({ minimum: 0 }),
+      }),
+    ),
     lightContext: Type.Optional(
       Type.Boolean({
         description: "Light bootstrap; subagent only; unavailable with visible=true.",
@@ -408,6 +415,35 @@ export function createSessionsSpawnTool(
         params.context === "fork" || params.context === "isolated" ? params.context : undefined;
       const streamTo = runtime === "acp" && params.streamTo === "parent" ? "parent" : undefined;
       const lightContext = params.lightContext === true;
+      const flowInput =
+        params.flow && typeof params.flow === "object"
+          ? {
+              flowId: readToolStringParam(params.flow as Record<string, unknown>, "flowId") ?? "",
+              controllerId:
+                readToolStringParam(params.flow as Record<string, unknown>, "controllerId") ?? "",
+              expectedRevision: readNonNegativeIntegerParam(
+                params.flow as Record<string, unknown>,
+                "expectedRevision",
+              ),
+            }
+          : undefined;
+      if (
+        flowInput &&
+        (!flowInput.flowId || !flowInput.controllerId || flowInput.expectedRevision === undefined)
+      ) {
+        throw new ToolInputError(
+          'sessions_spawn "flow" requires flowId, controllerId, and expectedRevision.',
+        );
+      }
+      const flow =
+        flowInput && flowInput.expectedRevision !== undefined
+          ? { ...flowInput, expectedRevision: flowInput.expectedRevision }
+          : undefined;
+      if (flow && (runtime === "acp" || params.visible === true)) {
+        throw new ToolInputError(
+          'sessions_spawn "flow" is currently supported by native subagent spawns only.',
+        );
+      }
       const roleContext = requestedAgentId ? { role: requestedAgentId } : {};
       const deliveryPressure = getSubagentDeliveryBacklogPressure();
       if (deliveryPressure.blocked) {
@@ -591,6 +627,7 @@ export function createSessionsSpawnTool(
             params.attachAs && typeof params.attachAs === "object"
               ? readToolStringParam(params.attachAs as Record<string, unknown>, "mountPath")
               : undefined,
+          flow,
         },
         withParentExecutionIdentity(
           {

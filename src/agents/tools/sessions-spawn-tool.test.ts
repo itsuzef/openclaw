@@ -1680,6 +1680,57 @@ describe("sessions_spawn tool", () => {
     },
   );
 
+  it("forwards managed-flow linkage only to native subagent spawns", async () => {
+    const tool = createSessionsSpawnTool({ agentSessionKey: "agent:main:main" });
+    const flow = {
+      flowId: "flow-managed-1",
+      controllerId: "tests/sessions-spawn",
+      expectedRevision: 7,
+    };
+
+    await tool.execute("call-linked-flow", { task: "do linked work", flow });
+
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({ task: "do linked work", flow }),
+      expect.any(Object),
+    );
+  });
+
+  it("rejects incomplete managed-flow linkage before spawning", async () => {
+    const tool = createSessionsSpawnTool({ agentSessionKey: "agent:main:main" });
+
+    await expect(
+      tool.execute("call-invalid-flow", {
+        task: "do linked work",
+        flow: { flowId: "flow-managed-1", expectedRevision: 7 },
+      }),
+    ).rejects.toThrow('sessions_spawn "flow" requires flowId, controllerId, and expectedRevision.');
+
+    expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects managed-flow linkage for ACP spawns", async () => {
+    registerAcpBackendForTest();
+    const tool = createSessionsSpawnTool({ agentSessionKey: "agent:main:main" });
+
+    await expect(
+      tool.execute("call-acp-linked-flow", {
+        runtime: "acp",
+        agentId: "codex",
+        task: "do linked work",
+        flow: {
+          flowId: "flow-managed-1",
+          controllerId: "tests/sessions-spawn",
+          expectedRevision: 7,
+        },
+      }),
+    ).rejects.toThrow(
+      'sessions_spawn "flow" is currently supported by native subagent spawns only.',
+    );
+
+    expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
+  });
+
   it("forwards a zero native timeout so a child can explicitly disable the default", async () => {
     const tool = createSessionsSpawnTool({ agentSessionKey: "agent:main:main" });
 

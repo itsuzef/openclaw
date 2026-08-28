@@ -25,6 +25,8 @@ export type DetachedTaskCreateParams = {
   scopeKind?: TaskScopeKind;
   requesterOrigin?: TaskDeliveryState["requesterOrigin"];
   parentFlowId?: string;
+  expectedParentFlowRevision?: number;
+  expectedParentFlowControllerId?: string;
   childSessionKey?: string;
   parentTaskId?: string;
   agentId?: string;

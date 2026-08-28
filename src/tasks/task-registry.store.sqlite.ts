@@ -491,6 +491,54 @@ export function upsertTaskWithDeliveryStateToSqlite(params: {
   });
 }
 
+/** Atomically binds a child task only while its managed flow still has this revision. */
+export function upsertTaskWithDeliveryStateForFlowToSqlite(params: {
+  task: TaskRecord;
+  deliveryState?: TaskDeliveryState;
+  flow: {
+    flowId: string;
+    ownerKey: string;
+    expectedRevision: number;
+    expectedControllerId?: string;
+  };
+}): boolean {
+  let linked = false;
+  withWriteTransaction((database) => {
+    const flow = database.db
+      .prepare(
+        "SELECT owner_key, sync_mode, controller_id, revision, status, cancel_requested_at FROM flow_runs WHERE flow_id = ?",
+      )
+      .get(params.flow.flowId) as
+      | {
+          owner_key: string;
+          sync_mode: string | null;
+          controller_id: string | null;
+          revision: number;
+          status: string;
+          cancel_requested_at: number | null;
+        }
+      | undefined;
+    if (
+      !flow ||
+      flow.owner_key !== params.flow.ownerKey ||
+      flow.sync_mode !== "managed" ||
+      flow.revision !== params.flow.expectedRevision ||
+      (params.flow.expectedControllerId !== undefined &&
+        flow.controller_id !== params.flow.expectedControllerId) ||
+      flow.cancel_requested_at !== null ||
+      ["succeeded", "failed", "cancelled", "lost"].includes(flow.status)
+    ) {
+      return;
+    }
+    upsertTaskRunRowInDatabase(database, bindTaskRecord(params.task));
+    if (params.deliveryState) {
+      replaceTaskDeliveryStateRow(database.db, bindTaskDeliveryState(params.deliveryState));
+    }
+    linked = true;
+  });
+  return linked;
+}
+
 export function deleteTaskRegistryRecordFromSqlite(taskId: string) {
   withWriteTransaction(({ db }) => {
     deleteTaskRowsWithDeliveryState(db, taskId);

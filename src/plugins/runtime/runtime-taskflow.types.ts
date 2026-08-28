@@ -6,7 +6,7 @@ import type {
   TaskDeliveryStatus,
   TaskNotifyPolicy,
   TaskRecord,
-  TaskRegistrySummary,
+  TaskFlowTaskSummary,
   TaskRuntime,
 } from "../../tasks/task-registry.types.js";
 import type { OpenClawPluginToolContext } from "../tool-types.js";
@@ -77,7 +77,7 @@ export type BoundTaskFlowRuntime = {
   list: () => TaskFlowRecord[];
   findLatest: () => TaskFlowRecord | undefined;
   resolve: (token: string) => TaskFlowRecord | undefined;
-  getTaskSummary: (flowId: string) => TaskRegistrySummary | undefined;
+  getTaskSummary: (flowId: string) => TaskFlowTaskSummary | undefined;
   setWaiting: (params: {
     flowId: string;
     expectedRevision: number;

@@ -33,6 +33,12 @@ import {
   finalizeTaskRunByRunId,
   getDetachedTaskLifecycleRuntime,
 } from "../../../tasks/detached-task-runtime.js";
+import { getFlowTaskSummary } from "../../../tasks/task-executor.js";
+import {
+  createManagedTaskFlow,
+  finishFlow,
+  requestFlowCancel,
+} from "../../../tasks/task-flow-runtime-internal.js";
 import {
   resetDetachedTaskLifecycleRuntimeForTests,
   resetTaskFlowRegistryForTests,
@@ -5246,6 +5252,122 @@ describe("subagent registry seam flow", () => {
       });
     },
   );
+
+  it("creates one durable managed-flow child row and keeps an idempotent retry linked", () => {
+    resetTaskRegistryForTests();
+    resetTaskFlowRegistryForTests();
+    try {
+      const flow = createManagedTaskFlow({
+        ownerKey: "agent:main:main",
+        controllerId: "tests/linked-spawn",
+        goal: "link a native child",
+      });
+      if (!flow) throw new Error("expected managed flow");
+      const input = {
+        runId: "run-linked-native-child",
+        childSessionKey: "agent:main:subagent:linked-native-child",
+        requesterSessionKey: "agent:main:main",
+        task: "perform linked work",
+        taskRowOwnership: "required" as const,
+        flow: {
+          flowId: flow.flowId,
+          ownerKey: flow.ownerKey,
+          controllerId: "tests/linked-spawn",
+          expectedRevision: flow.revision,
+        },
+      };
+      mockPendingAgentWait();
+      mod.registerSubagentRun(input);
+      mod.registerSubagentRun(input);
+
+      const summary = getFlowTaskSummary(flow.flowId);
+      expect(summary.total).toBe(1);
+      expect(summary.tasks).toEqual([
+        expect.objectContaining({
+          taskId: expect.any(String),
+          runId: input.runId,
+          childSessionKey: input.childSessionKey,
+        }),
+      ]);
+    } finally {
+      resetTaskRegistryForTests({ persist: false });
+      resetTaskFlowRegistryForTests({ persist: false });
+    }
+  });
+
+  it("keeps ordinary subagent registration on its existing one-task flow path without flow input", () => {
+    resetTaskRegistryForTests();
+    try {
+      mockPendingAgentWait();
+      mod.registerSubagentRun({
+        runId: "run-unlinked-native-child",
+        childSessionKey: "agent:main:subagent:unlinked-native-child",
+        requesterSessionKey: "agent:main:main",
+        task: "perform ordinary work",
+        taskRowOwnership: "required",
+      });
+      expect(findTaskByRunIdForStatus("run-unlinked-native-child")).toMatchObject({
+        parentFlowId: expect.any(String),
+        runId: "run-unlinked-native-child",
+      });
+    } finally {
+      resetTaskRegistryForTests({ persist: false });
+    }
+  });
+
+  it.each([
+    ["missing flow", undefined, "Managed TaskFlow not found."],
+    ["stale revision", "stale" as const, "Managed TaskFlow revision conflict."],
+    ["terminal flow", "terminal" as const, "Managed TaskFlow is not active (succeeded)."],
+    ["cancel-requested flow", "cancel" as const, "Managed TaskFlow is not active (queued)."],
+    ["controller mismatch", "controller" as const, "Managed TaskFlow controller mismatch."],
+    ["wrong owner", "owner" as const, "Managed TaskFlow not found."],
+  ])("rejects a linked spawn for %s without creating a task row", (_name, state, expected) => {
+    resetTaskRegistryForTests();
+    resetTaskFlowRegistryForTests();
+    try {
+      const flow = createManagedTaskFlow({
+        ownerKey: "agent:main:main",
+        controllerId: "tests/linked-spawn",
+        goal: "reject stale flow",
+      });
+      if (!flow) throw new Error("expected managed flow");
+      let expectedRevision = state === "stale" ? flow.revision + 1 : flow.revision;
+      if (state === "terminal") {
+        const finished = finishFlow({ flowId: flow.flowId, expectedRevision: flow.revision });
+        if (!finished.applied) throw new Error("expected terminal transition");
+        expectedRevision = finished.flow.revision;
+      }
+      if (state === "cancel") {
+        const cancelled = requestFlowCancel({
+          flowId: flow.flowId,
+          expectedRevision: flow.revision,
+        });
+        if (!cancelled.applied) throw new Error("expected cancel transition");
+        expectedRevision = cancelled.flow.revision;
+      }
+      const runId = `run-linked-${state ?? "missing"}`;
+      expect(() =>
+        mod.registerSubagentRun({
+          runId,
+          childSessionKey: `agent:main:subagent:${state ?? "missing"}`,
+          requesterSessionKey: "agent:main:main",
+          task: "must not link",
+          taskRowOwnership: "required",
+          flow: {
+            flowId: state === undefined ? "missing-flow" : flow.flowId,
+            ownerKey: state === "owner" ? "agent:main:other" : flow.ownerKey,
+            controllerId: state === "controller" ? "tests/other" : flow.controllerId!,
+            expectedRevision,
+          },
+        }),
+      ).toThrow(expected);
+      expect(getFlowTaskSummary(flow.flowId).total).toBe(0);
+    } finally {
+      resetTaskRegistryForTests({ persist: false });
+      resetTaskFlowRegistryForTests({ persist: false });
+    }
+  });
 
   it("keeps memory aligned with the durable registration when rollback persistence fails", () => {
     const childSessionKey = "agent:main:subagent:task-row-rollback-failure";

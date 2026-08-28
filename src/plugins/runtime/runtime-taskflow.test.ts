@@ -139,6 +139,13 @@ describe("runtime TaskFlow", () => {
     }
     expect(summary.total).toBe(1);
     expect(summary.active).toBe(1);
+    expect(summary.tasks).toEqual([
+      {
+        taskId: child.task.taskId,
+        runId: "runtime-taskflow-child",
+        childSessionKey: child.task.childSessionKey,
+      },
+    ]);
   });
 
   it("applies each managed transition exactly once with its explicit payload", () => {

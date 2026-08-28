@@ -8,6 +8,7 @@ import {
   listTaskRegistryRecordsByOwnerKeyFromSqlite,
   saveTaskRegistryStateToSqlite,
   upsertTaskWithDeliveryStateToSqlite,
+  upsertTaskWithDeliveryStateForFlowToSqlite,
   upsertTaskDeliveryStateToSqlite,
   upsertTaskRegistryRecordToSqlite,
 } from "./task-registry.store.sqlite.js";
@@ -24,6 +25,16 @@ export type TaskRegistryStore = {
     task: TaskRecord;
     deliveryState?: TaskDeliveryState;
   }) => void;
+  upsertTaskWithDeliveryStateForFlow?: (params: {
+    task: TaskRecord;
+    deliveryState?: TaskDeliveryState;
+    flow: {
+      flowId: string;
+      ownerKey: string;
+      expectedRevision: number;
+      expectedControllerId?: string;
+    };
+  }) => boolean;
   upsertTask?: (task: TaskRecord) => void;
   deleteTaskWithDeliveryState?: (taskId: string) => void;
   deleteTask?: (taskId: string) => void;
@@ -58,6 +69,7 @@ const defaultTaskRegistryStore: TaskRegistryStore = {
   saveSnapshot: saveTaskRegistryStateToSqlite,
   listTasksForOwnerKey: listTaskRegistryRecordsByOwnerKeyFromSqlite,
   upsertTaskWithDeliveryState: upsertTaskWithDeliveryStateToSqlite,
+  upsertTaskWithDeliveryStateForFlow: upsertTaskWithDeliveryStateForFlowToSqlite,
   upsertTask: upsertTaskRegistryRecordToSqlite,
   deleteTaskWithDeliveryState: deleteTaskAndDeliveryStateFromSqlite,
   deleteTask: deleteTaskRegistryRecordFromSqlite,

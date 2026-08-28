@@ -35,6 +35,7 @@ import { withEnvAsync } from "../test-utils/env.js";
 import { CRON_TASK_KIND } from "./cron-task-contract.js";
 import { SUBAGENT_KILL_TASK_ERROR } from "./detached-task-runtime-contract.js";
 import { ensureTaskRuntimeStateReady } from "./runtime-internal.js";
+import { runTaskInFlowForOwner } from "./task-executor.js";
 import {
   createTaskFlowForTask as createTaskFlowForTaskOrNull,
   createManagedTaskFlow as createManagedTaskFlowOrNull,
@@ -1854,6 +1855,35 @@ describe("task-registry", () => {
       const currentFlow = getTaskFlowById(flow.flowId);
       expect(currentFlow?.status).toBe("running");
       expect(currentFlow?.blockedTaskId).toBeUndefined();
+    });
+  });
+
+  it("fails closed when the task store cannot atomically link a managed-flow child", async () => {
+    await withTaskRegistryTempDir(async () => {
+      resetTaskRegistryMemoryForTest({ persist: false });
+      resetTaskFlowRegistryForTests({ persist: false });
+      configureInMemoryTaskStoresForTests();
+
+      const flow = createManagedTaskFlow({
+        ownerKey: "agent:main:main",
+        controllerId: "tests/task-registry",
+        goal: "Require an atomic child link",
+      });
+      const result = runTaskInFlowForOwner({
+        callerOwnerKey: flow.ownerKey,
+        flowId: flow.flowId,
+        expectedRevision: flow.revision,
+        expectedControllerId: flow.controllerId,
+        runtime: "subagent",
+        sourceId: "run-unsupported-atomic-store",
+        childSessionKey: "agent:main:subagent:unsupported-atomic-store",
+        runId: "run-unsupported-atomic-store",
+        task: "Must not be persisted without an atomic flow check",
+        status: "running",
+      });
+
+      expect(result.task).toBeUndefined();
+      expect(listTaskRecords()).toEqual([]);
     });
   });
 

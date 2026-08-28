@@ -36,6 +36,12 @@ export type SpawnSubagentParams = {
     mimeType?: string;
   }>;
   attachMountPath?: string;
+  /** Managed TaskFlow that must own the child task created by this spawn. */
+  flow?: {
+    flowId: string;
+    controllerId: string;
+    expectedRevision: number;
+  };
 };
 
 export type SpawnSubagentContext = {

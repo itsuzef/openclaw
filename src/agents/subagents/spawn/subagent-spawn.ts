@@ -19,6 +19,7 @@ import {
   recordSessionCreated,
   recordSubagentSpawned,
 } from "../../../sessions/session-state-events.js";
+import { getTaskFlowByIdForOwner } from "../../../tasks/task-flow-owner-access.js";
 import { hasPromptUnsafeControlCharacter } from "../../sanitize-for-prompt.js";
 import {
   runSpawnPipeline,
@@ -79,6 +80,26 @@ import {
 } from "./subagent-spawn.runtime.js";
 
 export { SUBAGENT_SPAWN_CONTEXT_MODES, SUBAGENT_SPAWN_MODES } from "./subagent-spawn.types.js";
+
+function validateManagedFlowSpawnLink(params: {
+  flow: NonNullable<SpawnSubagentParams["flow"]>;
+  ownerKey: string;
+}): string | undefined {
+  const flow = getTaskFlowByIdForOwner({
+    flowId: params.flow.flowId,
+    callerOwnerKey: params.ownerKey,
+  });
+  if (!flow) return "Managed TaskFlow not found.";
+  if (flow.syncMode !== "managed") return "TaskFlow does not accept managed child tasks.";
+  if (flow.controllerId !== params.flow.controllerId)
+    return "Managed TaskFlow controller mismatch.";
+  if (flow.revision !== params.flow.expectedRevision) return "Managed TaskFlow revision conflict.";
+  if (flow.cancelRequestedAt != null) return "Flow cancellation has already been requested.";
+  if (["succeeded", "failed", "cancelled", "lost"].includes(flow.status)) {
+    return `Flow is already ${flow.status}.`;
+  }
+  return undefined;
+}
 
 function sanitizeMountPathHint(value?: string): string | undefined {
   const trimmed = normalizeOptionalString(value);
@@ -143,6 +164,13 @@ export async function spawnSubagentDirect(
     },
     childIdem,
   } = requestResolution.resolved;
+  if (params.flow) {
+    const flowError = validateManagedFlowSpawnLink({
+      flow: params.flow,
+      ownerKey: ownership.controllerSessionKey,
+    });
+    if (flowError) return { status: "error", error: flowError };
+  }
   let modelApplied = false;
   let threadBindingReady = false;
   let hasBoundThreadDeliveryOrigin = false;
@@ -450,7 +478,7 @@ export async function spawnSubagentDirect(
           return { runId: childIdem };
         }
         const launch = await launchChildRun();
-        taskRowOwnership = launch.taskRowOwnership;
+        taskRowOwnership = params.flow ? "required" : launch.taskRowOwnership;
         acceptedChildRunId = readGatewayRunId(launch.response) ?? childIdem;
         recordSessionParticipantBestEffort({
           actor: { type: "agent", id: requesterAgentId },
@@ -563,7 +591,11 @@ export async function spawnSubagentDirect(
           groupId: swarmGroupId,
           queuedLaunch,
           queued: params.collect === true,
-          taskRowOwnership,
+          // A linked spawn must durably record the exact child task before it can succeed.
+          taskRowOwnership: params.flow ? "required" : taskRowOwnership,
+          ...(params.flow
+            ? { flow: { ...params.flow, ownerKey: ownership.controllerSessionKey } }
+            : {}),
           ...(gatewayContextResolver ? { gatewayContextResolver } : {}),
           attachmentsDir: attachmentAbsDir,
           attachmentsRootDir: attachmentRootDir,

@@ -106,6 +106,15 @@ export type TaskRegistrySummary = {
   warning?: string;
 };
 
+/** Exact child identities for the task rows linked to one managed flow. */
+export type TaskFlowTaskSummary = TaskRegistrySummary & {
+  tasks: Array<{
+    taskId: string;
+    runId?: string;
+    childSessionKey?: string;
+  }>;
+};
+
 export type TaskEventKind = TaskStatus | "progress";
 
 export type TaskEventRecord = {

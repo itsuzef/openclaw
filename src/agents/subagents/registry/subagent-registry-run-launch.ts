@@ -12,6 +12,8 @@ import {
   finalizeTaskRunByRunId,
   startTaskRunByRunId,
 } from "../../../tasks/detached-task-runtime.js";
+import { runTaskInFlowForOwner } from "../../../tasks/task-executor.js";
+import { getTaskFlowByIdForOwner } from "../../../tasks/task-flow-owner-access.js";
 import { normalizeDeliveryContext } from "../../../utils/delivery-context.shared.js";
 import type { DeliveryContext } from "../../../utils/delivery-context.types.js";
 import { resolveSubagentRequesterAgentId } from "../../subagent-requester-owner.js";
@@ -90,6 +92,7 @@ export type RegisterSubagentRunParams = {
       Gateway's existing best-effort CLI policy; other callers create a best-effort row here. */
   taskRowOwnership?: "required" | "gateway_best_effort";
   gatewayContextResolver?: GatewayContextResolver;
+  flow?: { flowId: string; controllerId: string; expectedRevision: number; ownerKey: string };
 };
 
 export class SubagentLaunchManager extends SubagentRecoveryManager {
@@ -120,6 +123,27 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
     const waitTimeoutMs = this.options.resolveSubagentWaitTimeoutMs(cfg, runTimeoutSeconds);
     const requesterOrigin = normalizeDeliveryContext(registerParams.requesterOrigin);
     const queued = registerParams.queued === true;
+    if (registerParams.flow) {
+      const flow = getTaskFlowByIdForOwner({
+        flowId: registerParams.flow.flowId,
+        callerOwnerKey: registerParams.flow.ownerKey,
+      });
+      if (!flow || flow.syncMode !== "managed") {
+        throw new Error("Managed TaskFlow not found.");
+      }
+      if (flow.controllerId !== registerParams.flow.controllerId) {
+        throw new Error("Managed TaskFlow controller mismatch.");
+      }
+      if (flow.revision !== registerParams.flow.expectedRevision) {
+        throw new Error("Managed TaskFlow revision conflict.");
+      }
+      if (
+        flow.cancelRequestedAt != null ||
+        ["succeeded", "failed", "cancelled", "lost"].includes(flow.status)
+      ) {
+        throw new Error(`Managed TaskFlow is not active (${flow.status}).`);
+      }
+    }
     const entry: SubagentRunRecord = normalizeSubagentRunState({
       runId,
       taskRunId: runId,
@@ -223,12 +247,13 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
         const taskParams = {
           runtime: "subagent",
           sourceId: runId,
-          ownerKey: requesterSessionKey,
+          ownerKey: registerParams.flow?.ownerKey ?? requesterSessionKey,
           scopeKind: "session",
           // Detached task runtimes are plugin-replaceable. Isolate their input so
           // mutation cannot change the already-persisted registry record.
           requesterOrigin: requesterOrigin ? structuredClone(requesterOrigin) : undefined,
           childSessionKey,
+          parentFlowId: registerParams.flow?.flowId,
           runId,
           label: registerParams.label,
           task: registerParams.task,
@@ -237,13 +262,19 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
           deliveryStatus:
             registerParams.expectsCompletionMessage === false ? "not_applicable" : "pending",
         } as const;
-        const task = queued
-          ? createQueuedTaskRun(taskParams)
-          : createRunningTaskRun({
+        const task = registerParams.flow
+          ? runTaskInFlowForOwner({
               ...taskParams,
-              startedAt: now,
-              lastEventAt: now,
-            });
+              callerOwnerKey: registerParams.flow.ownerKey,
+              flowId: registerParams.flow.flowId,
+              expectedRevision: registerParams.flow.expectedRevision,
+              expectedControllerId: registerParams.flow.controllerId,
+              status: queued ? "queued" : "running",
+              ...(queued ? {} : { startedAt: now, lastEventAt: now }),
+            }).task
+          : queued
+            ? createQueuedTaskRun(taskParams)
+            : createRunningTaskRun({ ...taskParams, startedAt: now, lastEventAt: now });
         if (!task) {
           if (registerParams.taskRowOwnership === "required") {
             throw new Error(`detached task runtime created no task row for run ${runId}`);

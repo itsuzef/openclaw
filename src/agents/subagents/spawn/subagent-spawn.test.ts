@@ -5,6 +5,8 @@ import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import { resolveIncognitoOpenClawAgentSqlitePath } from "../../../state/openclaw-agent-db.paths.js";
+import { createManagedTaskFlow } from "../../../tasks/task-flow-runtime-internal.js";
+import { resetTaskFlowRegistryForTests } from "../../../tasks/task-runtime.test-helpers.js";
 import { resolveUserPath } from "../../../utils.js";
 import { installAcceptedSubagentGatewayMock } from "../../test-helpers/subagent-gateway.js";
 import { testing as swarmSchedulerTesting } from "../swarm/swarm-scheduler.test-support.js";
@@ -1503,6 +1505,40 @@ describe("spawnSubagentDirect seam flow", () => {
     // In-process dispatch claims the task row directly, unlike ACP's best-effort
     // registration (see acp-spawn.test.ts).
     expect(firstRegisteredSubagentRun().taskRowOwnership).toBe("required");
+  });
+
+  it("terminates an accepted linked child when registration fails after flow preflight", async () => {
+    resetTaskFlowRegistryForTests();
+    try {
+      const flow = createManagedTaskFlow({
+        ownerKey: "agent:main:main",
+        controllerId: "tests/linked-spawn-cleanup",
+        goal: "clean up an unlinked accepted child",
+      });
+      if (!flow) throw new Error("expected managed flow");
+      hoisted.registerSubagentRunMock.mockImplementation(() => {
+        throw new Error("linked task persistence failed");
+      });
+
+      const result = await spawnSubagentDirect(
+        {
+          task: "must not survive unlinked",
+          flow: {
+            flowId: flow.flowId,
+            controllerId: flow.controllerId!,
+            expectedRevision: flow.revision,
+          },
+        },
+        { agentSessionKey: "agent:main:main" },
+      );
+
+      expect(result).toMatchObject({ status: "error", error: expect.stringContaining("register") });
+      expect(gatewayRequest("chat.abort")).toMatchObject({
+        params: expect.objectContaining({ runId: "run-1" }),
+      });
+    } finally {
+      resetTaskFlowRegistryForTests({ persist: false });
+    }
   });
 
   it("authorizes explicit model overrides for in-process child launches", async () => {

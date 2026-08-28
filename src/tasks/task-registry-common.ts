@@ -30,6 +30,8 @@ type ParentFlowLinkErrorCode =
   | "scope_kind_not_session"
   | "parent_flow_not_found"
   | "owner_key_mismatch"
+  | "controller_mismatch"
+  | "revision_conflict"
   | "cancel_requested"
   | "terminal";
 
@@ -72,6 +74,8 @@ export function assertParentFlowLinkAllowed(params: {
   ownerKey: string;
   scopeKind: TaskScopeKind;
   parentFlowId?: string;
+  expectedRevision?: number;
+  expectedControllerId?: string;
 }) {
   const flowId = params.parentFlowId?.trim();
   if (!flowId) {
@@ -96,6 +100,19 @@ export function assertParentFlowLinkAllowed(params: {
       "Task ownerKey must match parent flow ownerKey.",
       { flowId },
     );
+  }
+  if (
+    params.expectedControllerId !== undefined &&
+    flow.controllerId !== params.expectedControllerId
+  ) {
+    throw new ParentFlowLinkError("controller_mismatch", "Parent flow controller does not match.", {
+      flowId,
+    });
+  }
+  if (params.expectedRevision !== undefined && flow.revision !== params.expectedRevision) {
+    throw new ParentFlowLinkError("revision_conflict", "Parent flow revision conflict.", {
+      flowId,
+    });
   }
   if (flow.cancelRequestedAt != null) {
     throw new ParentFlowLinkError(

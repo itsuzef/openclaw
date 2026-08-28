@@ -659,6 +659,11 @@ snapshots; OpenClaw owns all persistence and lifecycle coordination.
     });
     ```
 
+    `sessions_spawn` can atomically link a native child to an existing managed flow when its
+    `flow` argument includes the flow id, controller id, and current revision. The spawn fails
+    without leaving a successful unlinked child if that managed flow is missing, terminal,
+    controlled by another owner, or changed before registration.
+
     Use `bindSession({ sessionKey, requesterOrigin })` when you already have a trusted OpenClaw session key from your own binding layer. Do not bind from raw user input.
 
   </Accordion>

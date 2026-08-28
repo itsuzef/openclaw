@@ -40,7 +40,7 @@ import type {
   TaskDeliveryStatus,
   TaskNotifyPolicy,
   TaskRecord,
-  TaskRegistrySummary,
+  TaskFlowTaskSummary,
   TaskRuntime,
 } from "./task-registry.types.js";
 
@@ -109,8 +109,16 @@ export function createQueuedTaskRunCore(params: DetachedTaskCreateParams): TaskR
   });
 }
 
-export function getFlowTaskSummary(flowId: string): TaskRegistrySummary {
-  return summarizeTaskRecords(listTasksForFlowId(flowId));
+export function getFlowTaskSummary(flowId: string): TaskFlowTaskSummary {
+  const tasks = listTasksForFlowId(flowId);
+  return {
+    ...summarizeTaskRecords(tasks),
+    tasks: tasks.map((task) => ({
+      taskId: task.taskId,
+      ...(task.runId ? { runId: task.runId } : {}),
+      ...(task.childSessionKey ? { childSessionKey: task.childSessionKey } : {}),
+    })),
+  };
 }
 
 export function createRunningTaskRunCore(
@@ -150,6 +158,8 @@ type RunTaskInFlowParams = {
   startedAt?: number;
   lastEventAt?: number;
   progressSummary?: string | null;
+  expectedRevision?: number;
+  expectedControllerId?: string;
 };
 
 export function startTaskRunByRunIdCore(params: {
@@ -345,6 +355,15 @@ function runTaskInFlow(params: RunTaskInFlowParams): RunTaskInFlowResult {
       flow,
     };
   }
+  if (
+    params.expectedControllerId !== undefined &&
+    flow.controllerId !== params.expectedControllerId
+  ) {
+    return { found: true, created: false, reason: "Managed TaskFlow controller mismatch.", flow };
+  }
+  if (params.expectedRevision !== undefined && flow.revision !== params.expectedRevision) {
+    return { found: true, created: false, reason: "Managed TaskFlow revision conflict.", flow };
+  }
   if (flow.cancelRequestedAt != null) {
     return {
       found: true,
@@ -369,6 +388,8 @@ function runTaskInFlow(params: RunTaskInFlowParams): RunTaskInFlowResult {
     scopeKind: "session" as const,
     requesterOrigin: flow.requesterOrigin,
     parentFlowId: flow.flowId,
+    expectedParentFlowRevision: params.expectedRevision,
+    expectedParentFlowControllerId: params.expectedControllerId,
     childSessionKey: params.childSessionKey,
     parentTaskId: params.parentTaskId,
     agentId: params.agentId,
@@ -453,6 +474,8 @@ export function runTaskInFlowForOwner(
     startedAt: params.startedAt,
     lastEventAt: params.lastEventAt,
     progressSummary: params.progressSummary,
+    expectedRevision: params.expectedRevision,
+    expectedControllerId: params.expectedControllerId,
   });
 }
 

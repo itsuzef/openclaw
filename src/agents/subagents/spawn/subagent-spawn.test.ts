@@ -1515,7 +1515,9 @@ describe("spawnSubagentDirect seam flow", () => {
         controllerId: "tests/linked-spawn-cleanup",
         goal: "clean up an unlinked accepted child",
       });
-      if (!flow) throw new Error("expected managed flow");
+      if (!flow) {
+        throw new Error("expected managed flow");
+      }
       hoisted.registerSubagentRunMock.mockImplementation(() => {
         throw new Error("linked task persistence failed");
       });

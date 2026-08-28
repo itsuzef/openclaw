@@ -113,11 +113,16 @@ export function getFlowTaskSummary(flowId: string): TaskFlowTaskSummary {
   const tasks = listTasksForFlowId(flowId);
   return {
     ...summarizeTaskRecords(tasks),
-    tasks: tasks.map((task) => ({
-      taskId: task.taskId,
-      ...(task.runId ? { runId: task.runId } : {}),
-      ...(task.childSessionKey ? { childSessionKey: task.childSessionKey } : {}),
-    })),
+    tasks: tasks.map((task) => {
+      const summary: TaskFlowTaskSummary["tasks"][number] = { taskId: task.taskId };
+      if (task.runId) {
+        summary.runId = task.runId;
+      }
+      if (task.childSessionKey) {
+        summary.childSessionKey = task.childSessionKey;
+      }
+      return summary;
+    }),
   };
 }
 

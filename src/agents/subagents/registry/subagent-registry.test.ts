@@ -5262,7 +5262,9 @@ describe("subagent registry seam flow", () => {
         controllerId: "tests/linked-spawn",
         goal: "link a native child",
       });
-      if (!flow) throw new Error("expected managed flow");
+      if (!flow) {
+        throw new Error("expected managed flow");
+      }
       const input = {
         runId: "run-linked-native-child",
         childSessionKey: "agent:main:subagent:linked-native-child",
@@ -5331,11 +5333,15 @@ describe("subagent registry seam flow", () => {
         controllerId: "tests/linked-spawn",
         goal: "reject stale flow",
       });
-      if (!flow) throw new Error("expected managed flow");
+      if (!flow) {
+        throw new Error("expected managed flow");
+      }
       let expectedRevision = state === "stale" ? flow.revision + 1 : flow.revision;
       if (state === "terminal") {
         const finished = finishFlow({ flowId: flow.flowId, expectedRevision: flow.revision });
-        if (!finished.applied) throw new Error("expected terminal transition");
+        if (!finished.applied) {
+          throw new Error("expected terminal transition");
+        }
         expectedRevision = finished.flow.revision;
       }
       if (state === "cancel") {
@@ -5343,7 +5349,9 @@ describe("subagent registry seam flow", () => {
           flowId: flow.flowId,
           expectedRevision: flow.revision,
         });
-        if (!cancelled.applied) throw new Error("expected cancel transition");
+        if (!cancelled.applied) {
+          throw new Error("expected cancel transition");
+        }
         expectedRevision = cancelled.flow.revision;
       }
       const runId = `run-linked-${state ?? "missing"}`;

@@ -4,7 +4,6 @@
  * Validates spawn requests, prepares child sessions, stages attachments, binds delivery context, and registers runs.
  */
 import { promises as fs } from "node:fs";
-import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { isAcpRuntimeSpawnAvailable } from "../../../acp/runtime/availability.js";
 import { isExecutionIdentityCollectionEnabled } from "../../../audit/audit-config.js";
 import { resolveSessionStorePathCore } from "../../../config/sessions/paths.js";
@@ -19,8 +18,6 @@ import {
   recordSessionCreated,
   recordSubagentSpawned,
 } from "../../../sessions/session-state-events.js";
-import { getTaskFlowByIdForOwner } from "../../../tasks/task-flow-owner-access.js";
-import { hasPromptUnsafeControlCharacter } from "../../sanitize-for-prompt.js";
 import {
   runSpawnPipeline,
   type SpawnBackendAdapter,
@@ -34,6 +31,7 @@ import {
 } from "../registry/subagent-registry.js";
 import { activateSwarmRun, removeQueuedSwarmRun } from "../swarm/swarm-scheduler.js";
 import { readParentExecutionIdentity } from "./execution-identity-spawn-context.js";
+import { validateManagedFlowSpawnLink } from "./managed-flow-spawn-link.js";
 import {
   materializeSubagentAttachments,
   type SubagentAttachmentReceiptFile,
@@ -62,6 +60,7 @@ import {
   withSubagentGatewayExecutionIdentity,
 } from "./subagent-spawn-execution-identity.js";
 import { callNativeSubagentGateway, readGatewayRunId } from "./subagent-spawn-gateway.js";
+import { sanitizeMountPathHint } from "./subagent-spawn-input.js";
 import { buildSubagentLaunchRequest } from "./subagent-spawn-launch-request.js";
 import { createSubagentSpawnLifecycleEmitter } from "./subagent-spawn-lifecycle.js";
 import { resolveSubagentSpawnRequest } from "./subagent-spawn-request.js";
@@ -80,40 +79,6 @@ import {
 } from "./subagent-spawn.runtime.js";
 
 export { SUBAGENT_SPAWN_CONTEXT_MODES, SUBAGENT_SPAWN_MODES } from "./subagent-spawn.types.js";
-
-function validateManagedFlowSpawnLink(params: {
-  flow: NonNullable<SpawnSubagentParams["flow"]>;
-  ownerKey: string;
-}): string | undefined {
-  const flow = getTaskFlowByIdForOwner({
-    flowId: params.flow.flowId,
-    callerOwnerKey: params.ownerKey,
-  });
-  if (!flow) return "Managed TaskFlow not found.";
-  if (flow.syncMode !== "managed") return "TaskFlow does not accept managed child tasks.";
-  if (flow.controllerId !== params.flow.controllerId)
-    return "Managed TaskFlow controller mismatch.";
-  if (flow.revision !== params.flow.expectedRevision) return "Managed TaskFlow revision conflict.";
-  if (flow.cancelRequestedAt != null) return "Flow cancellation has already been requested.";
-  if (["succeeded", "failed", "cancelled", "lost"].includes(flow.status)) {
-    return `Flow is already ${flow.status}.`;
-  }
-  return undefined;
-}
-
-function sanitizeMountPathHint(value?: string): string | undefined {
-  const trimmed = normalizeOptionalString(value);
-  if (!trimmed) {
-    return undefined;
-  }
-  if (hasPromptUnsafeControlCharacter(trimmed)) {
-    return undefined;
-  }
-  if (!/^[A-Za-z0-9._\-/:]+$/.test(trimmed)) {
-    return undefined;
-  }
-  return trimmed;
-}
 
 export async function spawnSubagentDirect(
   params: SpawnSubagentParams,
@@ -169,7 +134,9 @@ export async function spawnSubagentDirect(
       flow: params.flow,
       ownerKey: ownership.controllerSessionKey,
     });
-    if (flowError) return { status: "error", error: flowError };
+    if (flowError) {
+      return { status: "error", error: flowError };
+    }
   }
   let modelApplied = false;
   let threadBindingReady = false;

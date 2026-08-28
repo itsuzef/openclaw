@@ -314,15 +314,18 @@ export async function maybeWakeRequesterAfterAllChildrenSettled(params: {
   const requesterYieldedAfterDelivery =
     selectedState.afterRequesterYield === true ||
     (selectedState.requesterYieldBatch === true && selectedState.rearmGeneration !== undefined);
+  // Nested one-shot completion delivery remains parent-owned, but a yielded
+  // orchestrator's durable rearm is its only continuation path after this batch.
   if (
     requiredSettled.length === 0 ||
     (requiredSettled.length < 2 &&
       !hasUndeliveredRequiredCompletion &&
       !requesterYieldedAfterDelivery) ||
-    getSubagentDepthFromSessionStore(requesterSessionKey, {
+    (getSubagentDepthFromSessionStore(requesterSessionKey, {
       cfg,
       agentId: requesterAgentId,
-    }) >= 1
+    }) >= 1 &&
+      !requesterYieldedAfterDelivery)
   ) {
     completeRequesterSettleWakeBatch({
       runIds: batchRunIds,

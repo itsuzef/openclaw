@@ -20,9 +20,17 @@ export function createSubagentRegistryPublicApi(config: {
   restoreOnce: () => void;
   startAnnounceCleanup: (runId: string, entry: SubagentRunRecord) => boolean;
   settleRequesterTurn: SubagentLifecycleController["settleRequesterTurnAfterSessionSpawns"];
+  resumeRequesterTaskAfterYield: (entry: SubagentRunRecord, yieldedAt: number) => void;
 }) {
-  const { runs, persist, persistOrThrow, restoreOnce, startAnnounceCleanup, settleRequesterTurn } =
-    config;
+  const {
+    runs,
+    persist,
+    persistOrThrow,
+    restoreOnce,
+    startAnnounceCleanup,
+    settleRequesterTurn,
+    resumeRequesterTaskAfterYield,
+  } = config;
   const readRuns = () => getSubagentRunsSnapshotForRead(runs);
   const findRunById = (records: Map<string, SubagentRunRecord>, runId: string) =>
     records.get(runId) ?? [...records.values()].find((entry) => entry.swarmRunId === runId);
@@ -190,6 +198,7 @@ export function createSubagentRegistryPublicApi(config: {
       ...params,
       runs,
       persistOrThrow,
+      resumeRequesterTaskAfterYield,
     });
   }
 

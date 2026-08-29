@@ -262,15 +262,24 @@ export async function maybeWakeRequesterAfterAllChildrenSettled(params: {
   let settledBatch: SubagentRunRecord[];
   if (frozenBatchRunIds && frozenBatchRunIds.length > 0) {
     const runsById = new Map(requesterRuns.map((entry) => [entry.runId, entry]));
-    // Retired rows no longer own completion, but every surviving frozen member
-    // must be terminal before this batch can wake its requester.
-    settledBatch = frozenBatchRunIds
-      .map((runId) => runsById.get(runId))
-      .filter(
-        (entry): entry is SubagentRunRecord =>
-          Boolean(entry?.requesterSettleWake) &&
-          entry?.requesterSettleWake?.rearmGeneration === currentRearmGeneration,
-      );
+    // A frozen yielded batch is an all-or-nothing ownership set. Missing rows
+    // or members that moved generations cannot be silently dropped: doing so
+    // lets the first settled child wake and re-enter a partially drained batch.
+    const frozenMembers = frozenBatchRunIds.map((runId) => runsById.get(runId));
+    if (
+      frozenMembers.some(
+        (entry) =>
+          !entry?.requesterSettleWake ||
+          entry.requesterSettleWake.rearmGeneration !== currentRearmGeneration ||
+          entry.requesterSettleWake.batchRunIds?.length !== frozenBatchRunIds.length ||
+          !entry.requesterSettleWake.batchRunIds.every(
+            (runId, index) => runId === frozenBatchRunIds[index],
+          ),
+      )
+    ) {
+      return false;
+    }
+    settledBatch = frozenMembers as SubagentRunRecord[];
     if (
       settledBatch.some(
         (entry) => entry.execution.status === "running" || !hasSubagentRunEnded(entry),

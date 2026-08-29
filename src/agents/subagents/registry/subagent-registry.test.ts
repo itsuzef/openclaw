@@ -3497,61 +3497,124 @@ describe("subagent registry seam flow", () => {
     expect(afterLateYield?.pauseReason).toBeUndefined();
   });
 
-  it("accepts an authoritative late yield after non-kill cleanup started", async () => {
+  it("keeps a nested controller live across relay and four-worker yield cycles", async () => {
     mockPendingAgentWait();
-    const runId = "run-yield-after-success-cleanup";
-    const childSessionKey = "agent:main:subagent:yield-after-success-cleanup";
+    const initialRunId = "run-controller-initial";
+    const firstResumeRunId = "run-controller-workers";
+    const finalRunId = "run-controller-final";
+    const controllerSessionKey = "agent:main:subagent:nested-controller";
     mod.registerSubagentRun({
-      runId,
-      childSessionKey,
-      task: "pause after terminal projection",
+      runId: initialRunId,
+      childSessionKey: controllerSessionKey,
+      task: "run relay then worker batch",
     });
-    const lifecycleHandler = getLifecycleHandler();
-    const run = findRequesterRun(runId);
-    expect(run).toBeDefined();
-    const taskBeforeYield = findTaskByRunIdForStatus(runId);
-    const flowId = taskBeforeYield?.parentFlowId;
-    expect(flowId).toBeDefined();
-    finalizeTaskRunByRunId({
-      runId,
-      runtime: "subagent",
-      sessionKey: childSessionKey,
-      status: "failed",
-      endedAt: 222,
-      error: "subagent run ended before producing a final reply",
-    });
-    expect(findTaskByRunIdForStatus(runId)?.status).toBe("failed");
-    expect(getTaskFlowById(flowId!)?.status).toBe("failed");
-    Object.assign(run!, {
-      endedReason: SUBAGENT_ENDED_REASON_COMPLETE,
-      execution: {
-        ...run!.execution,
-        status: "terminal",
-        endedAt: 222,
-        outcome: { status: "ok" as const },
-      },
-      cleanupHandled: true,
-      cleanupCompletedAt: 223,
-      delivery: { status: "delivered" as const, deliveredAt: 223 },
-    });
-
-    lifecycleHandler?.({
-      runId,
-      stream: "lifecycle",
-      data: { phase: "end", startedAt: 111, endedAt: 333, yielded: true },
-    });
-
-    expect(run).toMatchObject({
-      execution: { status: "terminal", endedAt: 333 },
-      pauseReason: "sessions_yield",
-      cleanupHandled: false,
-      delivery: { status: "pending" },
-    });
-    expect(run?.endedReason).toBeUndefined();
-    expect(run?.execution.outcome).toBeUndefined();
-    expect(run?.cleanupCompletedAt).toBeUndefined();
-    expect(findTaskByRunIdForStatus(runId)).toMatchObject({ status: "running" });
+    const task = findTaskByRunIdForStatus(initialRunId);
+    const flowId = task?.parentFlowId;
+    expect(task).toMatchObject({ status: "running" });
     expect(getTaskFlowById(flowId!)?.status).toBe("running");
+
+    const relay = {
+      runId: "run-relay",
+      childSessionKey: "agent:main:subagent:relay",
+    };
+    mod.registerSubagentRun({
+      ...relay,
+      requesterSessionKey: controllerSessionKey,
+      requesterTurnRunId: initialRunId,
+      task: "relay",
+      expectsCompletionMessage: true,
+    });
+    expect(
+      mod.markRequesterTurnYielded({
+        requesterSessionKey: controllerSessionKey,
+        requesterTurnRunId: initialRunId,
+      }),
+    ).toBe(1);
+    expect(findRequesterRun(initialRunId)).toMatchObject({
+      pauseReason: "sessions_yield",
+      execution: { status: "terminal" },
+    });
+    expect(findTaskByRunIdForStatus(initialRunId)?.status).toBe("running");
+    expect(getTaskFlowById(flowId!)?.status).toBe("running");
+    expect(
+      mod.settleRequesterAfterSessionSpawns({
+        requesterSessionKey: controllerSessionKey,
+        requesterTurnRunId: initialRunId,
+        requesterYielded: true,
+        acceptedSessionSpawns: [relay],
+      }),
+    ).toBe(true);
+
+    expect(
+      mod.adoptPausedSubagentRunForFollowUp({
+        childSessionKey: controllerSessionKey,
+        runId: firstResumeRunId,
+        task: "spawn the worker batch",
+      }),
+    ).toBe(true);
+    const workers = ["bassline", "chords", "percussion", "atmos"].map((name) => ({
+      runId: `run-worker-${name}`,
+      childSessionKey: `agent:main:subagent:worker-${name}`,
+    }));
+    for (const worker of workers) {
+      mod.registerSubagentRun({
+        ...worker,
+        requesterSessionKey: controllerSessionKey,
+        requesterTurnRunId: firstResumeRunId,
+        task: worker.runId,
+        expectsCompletionMessage: true,
+      });
+    }
+    expect(
+      mod.markRequesterTurnYielded({
+        requesterSessionKey: controllerSessionKey,
+        requesterTurnRunId: firstResumeRunId,
+      }),
+    ).toBe(4);
+    expect(
+      mod.settleRequesterAfterSessionSpawns({
+        requesterSessionKey: controllerSessionKey,
+        requesterTurnRunId: firstResumeRunId,
+        requesterYielded: true,
+        acceptedSessionSpawns: workers,
+      }),
+    ).toBe(true);
+    const frozenWorkerIds = workers.map((worker) => worker.runId).toSorted();
+    const workerRuns = mod
+      .listSubagentRunsForRequester(controllerSessionKey)
+      .filter((run) => frozenWorkerIds.includes(run.runId));
+    expect(workerRuns).toHaveLength(4);
+    expect(
+      workerRuns.every(
+        (run) =>
+          run.requesterSettleWake?.rearmGeneration === 1 &&
+          run.requesterSettleWake.batchRunIds?.join(",") === frozenWorkerIds.join(","),
+      ),
+    ).toBe(true);
+    expect(findTaskByRunIdForStatus(initialRunId)?.status).toBe("running");
+    expect(getTaskFlowById(flowId!)?.status).toBe("running");
+
+    expect(
+      mod.adoptPausedSubagentRunForFollowUp({
+        childSessionKey: controllerSessionKey,
+        runId: finalRunId,
+        task: "publish final result",
+      }),
+    ).toBe(true);
+    getLifecycleHandler()({
+      runId: finalRunId,
+      stream: "lifecycle",
+      data: {
+        phase: "end",
+        startedAt: 400,
+        endedAt: 500,
+        terminalReply: { disposition: "visible", text: "all batches complete" },
+      },
+    });
+    await waitForFast(() => {
+      expect(findTaskByRunIdForStatus(initialRunId)?.status).toBe("succeeded");
+      expect(getTaskFlowById(flowId!)?.status).toBe("succeeded");
+    });
   });
 
   it("keeps yield terminals paused when the lifecycle event also signals abort (#92448)", async () => {

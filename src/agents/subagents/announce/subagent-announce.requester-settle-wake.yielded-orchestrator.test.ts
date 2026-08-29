@@ -93,13 +93,31 @@ describe("yielded nested requester settle wake", () => {
     registryRuntimeMock.listSubagentRunsForRequester.mockImplementation(() => runs);
   });
 
-  it("rearms a depth-1 orchestrator after a relay and a four-worker batch", async () => {
+  it("rearms once per complete relay and four-worker batch", async () => {
     const batches = [
       ["run-relay"],
       ["run-worker-a", "run-worker-b", "run-worker-c", "run-worker-d"],
     ];
     for (const [index, batchRunIds] of batches.entries()) {
       runs = batchRunIds.map((runId) => makeChild(runId, batchRunIds, index + 1));
+      if (runs.length > 1) {
+        for (const worker of runs.slice(1)) {
+          worker.execution = { status: "running", startedAt: 2_000 };
+        }
+        await expect(
+          maybeWakeRequesterAfterAllChildrenSettled({
+            requesterSessionKey,
+            settledEntry: runs[0]!,
+            transitionBatch: vi.fn(),
+            completeBatch: completeBatchSpy,
+          }),
+        ).resolves.toBe(false);
+        expect(deliverSpy).toHaveBeenCalledTimes(index);
+        expect(completeBatchSpy).toHaveBeenCalledTimes(index);
+        for (const worker of runs.slice(1)) {
+          worker.execution = { status: "terminal", startedAt: 2_000, endedAt: 3_000 };
+        }
+      }
       await expect(
         maybeWakeRequesterAfterAllChildrenSettled({
           requesterSessionKey,

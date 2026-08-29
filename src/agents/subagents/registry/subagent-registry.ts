@@ -584,6 +584,11 @@ const publicApi = createSubagentRegistryPublicApi({
   restoreOnce: () => subagentRestorer.restoreOnce(),
   startAnnounceCleanup: startSubagentAnnounceCleanupFlow,
   settleRequesterTurn: settleRequesterTurnAfterSessionSpawns,
+  resumeRequesterTaskAfterYield: (entry, yieldedAt) =>
+    safeResumeSubagentTaskRunAfterYield(subagentLifecycleController.options, {
+      entry,
+      resumedAt: yieldedAt,
+    }),
 });
 
 export const leasePendingAgentSteeringItems = publicApi.leasePendingAgentSteeringItems;

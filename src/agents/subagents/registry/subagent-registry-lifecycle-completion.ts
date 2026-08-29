@@ -128,6 +128,12 @@ export async function completeSubagentRunAttempt(
     if (completeParams.expectedEntry && entry !== completeParams.expectedEntry) {
       return;
     }
+    // sessions_yield is committed by the tool before its abort/end signals race
+    // through agent.wait and lifecycle listeners. Once that authoritative pause
+    // exists, no terminal callback from the yielded turn may settle its task.
+    if (entry.pauseReason === "sessions_yield") {
+      return;
+    }
     suppressSessionEffects ||= shouldSuppressSubagentRecoverySessionEffects(entry);
     params.clearPendingLifecycleError(completeParams.runId);
     const currentEntry = entry;

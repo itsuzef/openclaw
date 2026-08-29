@@ -266,10 +266,10 @@ describe("task-executor", () => {
     });
   });
 
-  it("reopens a yielded subagent task and its mirrored flow after a raced final-reply failure", async () => {
+  it("keeps repeated yielded subagent cycles live before final success", async () => {
     await withTaskExecutorStateDir(async () => {
-      const runId = "run-yield-raced-final-reply";
-      const childSessionKey = "agent:main:subagent:yield-race";
+      const runId = "run-repeated-yield";
+      const childSessionKey = "agent:main:subagent:repeated-yield";
       const task = createRunningTaskRun({
         runtime: "subagent",
         ownerKey: "agent:main:main",
@@ -285,27 +285,34 @@ describe("task-executor", () => {
         throw new Error("expected one-task mirrored flow");
       }
 
-      failTaskRunByRunId({
+      for (const resumedAt of [201, 301]) {
+        resumeSubagentTaskRunByRunId({ runId, sessionKey: childSessionKey, resumedAt });
+        expect(getTaskById(task.taskId)).toMatchObject({
+          status: "running",
+          lastEventAt: resumedAt,
+          deliveryStatus: "pending",
+        });
+        expect(getTaskById(task.taskId)?.endedAt).toBeUndefined();
+        expect(getTaskById(task.taskId)?.error).toBeUndefined();
+        expect(getTaskFlowById(flowId)?.status).toBe("running");
+        expect(getTaskFlowById(flowId)?.endedAt).toBeUndefined();
+      }
+
+      completeTaskRunByRunId({
         runId,
         runtime: "subagent",
         sessionKey: childSessionKey,
-        endedAt: 200,
-        error: "subagent run ended before producing a final reply",
+        endedAt: 400,
+        terminalSummary: "All nested batches completed.",
       });
-      expect(getTaskById(task.taskId)?.status).toBe("failed");
-      expect(getTaskFlowById(flowId)?.status).toBe("failed");
-
-      resumeSubagentTaskRunByRunId({ runId, sessionKey: childSessionKey, resumedAt: 201 });
-
       expect(getTaskById(task.taskId)).toMatchObject({
-        status: "running",
-        lastEventAt: 201,
-        deliveryStatus: "pending",
+        status: "succeeded",
+        endedAt: 400,
       });
-      expect(getTaskById(task.taskId)?.endedAt).toBeUndefined();
-      expect(getTaskById(task.taskId)?.error).toBeUndefined();
-      expect(getTaskFlowById(flowId)?.status).toBe("running");
-      expect(getTaskFlowById(flowId)?.endedAt).toBeUndefined();
+      expect(getTaskFlowById(flowId)).toMatchObject({
+        status: "succeeded",
+        endedAt: 400,
+      });
     });
   });
 
@@ -478,6 +485,11 @@ describe("task-executor", () => {
       expect(getTaskFlowById(flowId)?.status).toBe("cancelled");
 
       const cancelled = await cancelFlowById({ cfg: {} as never, flowId });
+      resumeSubagentTaskRunByRunId({
+        runId: child.runId!,
+        sessionKey: child.childSessionKey,
+        resumedAt: 25,
+      });
       completeTaskRunByRunId({
         runId: child.runId!,
         runtime: "subagent",

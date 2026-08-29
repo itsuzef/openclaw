@@ -33,13 +33,22 @@ const transitionRequesterSettleWakeBatch = (
   state: RequesterSettleWakeBatchState,
 ) => {
   const params = context.options;
-  const entries = runIds
-    .map((runId) => params.runs.get(runId))
-    .filter(
-      (entry): entry is SubagentRunRecord =>
-        Boolean(entry?.requesterSettleWake) &&
-        entry?.requesterSettleWake?.rearmGeneration === state.rearmGeneration,
-    );
+  const candidates = runIds.map((runId) => params.runs.get(runId));
+  if (
+    state.rearmGeneration !== undefined &&
+    candidates.some(
+      (entry) =>
+        !entry?.requesterSettleWake ||
+        entry.requesterSettleWake.rearmGeneration !== state.rearmGeneration,
+    )
+  ) {
+    return;
+  }
+  const entries = candidates.filter(
+    (entry): entry is SubagentRunRecord =>
+      Boolean(entry?.requesterSettleWake) &&
+      entry?.requesterSettleWake?.rearmGeneration === state.rearmGeneration,
+  );
   if (entries.length === 0) {
     return;
   }
@@ -67,13 +76,22 @@ const completeRequesterSettleWakeBatch = (
   outcome?: SubagentAnnounceDeliveryResult,
 ) => {
   const params = context.options;
-  const entries = runIds
-    .map((runId) => [runId, params.runs.get(runId)] as const)
-    .filter(
-      (pair): pair is readonly [string, SubagentRunRecord] =>
-        Boolean(pair[1]?.requesterSettleWake) &&
-        pair[1]?.requesterSettleWake?.rearmGeneration === rearmGeneration,
-    );
+  const candidates = runIds.map((runId) => [runId, params.runs.get(runId)] as const);
+  if (
+    rearmGeneration !== undefined &&
+    candidates.some(
+      ([, entry]) =>
+        !entry?.requesterSettleWake ||
+        entry.requesterSettleWake.rearmGeneration !== rearmGeneration,
+    )
+  ) {
+    return;
+  }
+  const entries = candidates.filter(
+    (pair): pair is readonly [string, SubagentRunRecord] =>
+      Boolean(pair[1]?.requesterSettleWake) &&
+      pair[1]?.requesterSettleWake?.rearmGeneration === rearmGeneration,
+  );
   if (entries.length === 0) {
     return;
   }

@@ -30,7 +30,53 @@ function accepted(entry: SubagentRunRecord) {
 }
 
 describe("settleRequesterTurnAfterSessionSpawns", () => {
-  it("persists explicit yield intent before settlement", () => {
+  it("atomically pauses a nested requester and marks its child batch yielded", () => {
+    const child = makeRun("run-child", false);
+    const requester: SubagentRunRecord = {
+      runId: REQUESTER_TURN,
+      taskRunId: "task-requester",
+      childSessionKey: REQUESTER,
+      requesterSessionKey: "agent:main:main",
+      requesterDisplayKey: "main",
+      task: "orchestrate two batches",
+      cleanup: "keep",
+      createdAt: 500,
+      execution: { status: "running", startedAt: 750 },
+      expectsCompletionMessage: true,
+      delivery: { status: "pending" },
+    };
+    const persistOrThrow = vi.fn();
+    const resumeRequesterTaskAfterYield = vi.fn();
+
+    expect(
+      markRequesterTurnYieldedInRuns({
+        requesterSessionKey: REQUESTER,
+        requesterTurnRunId: REQUESTER_TURN,
+        runs: new Map([
+          [requester.runId, requester],
+          [child.runId, child],
+        ]),
+        persistOrThrow,
+        resumeRequesterTaskAfterYield,
+      }),
+    ).toBe(1);
+    expect(child.requesterTurnYielded).toBe(true);
+    expect(requester).toMatchObject({
+      pauseReason: "sessions_yield",
+      execution: { status: "terminal" },
+    });
+    expect(requester.execution.outcome).toBeUndefined();
+    expect(persistOrThrow).toHaveBeenCalledOnce();
+    expect(persistOrThrow.mock.calls[0]).toEqual(
+      expect.arrayContaining([requester.runId, child.runId]),
+    );
+    expect(resumeRequesterTaskAfterYield).toHaveBeenCalledExactlyOnceWith(
+      requester,
+      requester.execution.endedAt,
+    );
+  });
+
+  it("persists explicit top-level yield intent before settlement", () => {
     const entry = makeRun("run-child", false);
     const persistOrThrow = vi.fn();
 

@@ -1,5 +1,6 @@
 /** Settles durable child ownership when the spawning requester turn ends. */
 import type { AcceptedSessionSpawn } from "../../accepted-session-spawn.js";
+import { markSubagentRunPausedAfterYield } from "./subagent-registry-run-manager.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 
 /** Persists explicit yield intent before the requester run is aborted. */
@@ -9,6 +10,7 @@ export function markRequesterTurnYieldedInRuns(params: {
   requesterTurnRunId: string;
   runs: Map<string, SubagentRunRecord>;
   persistOrThrow(...runIds: string[]): void;
+  resumeRequesterTaskAfterYield?: (entry: SubagentRunRecord, yieldedAt: number) => void;
 }): number {
   const requesterSessionKey = params.requesterSessionKey.trim();
   const requesterTurnRunId = params.requesterTurnRunId.trim();
@@ -22,20 +24,52 @@ export function markRequesterTurnYieldedInRuns(params: {
       entry.requesterTurnRunId === requesterTurnRunId &&
       entry.expectsCompletionMessage === true,
   );
-  if (entries.every((entry) => entry.requesterTurnYielded === true)) {
+  const requesterEntry = params.runs.get(requesterTurnRunId);
+  const yieldedAt = Date.now();
+  const requesterOwnsTurn =
+    requesterEntry?.childSessionKey === requesterSessionKey &&
+    (!params.requesterAgentId || requesterEntry.requesterAgentId === params.requesterAgentId);
+  if (
+    entries.every((entry) => entry.requesterTurnYielded === true) &&
+    (!requesterOwnsTurn || requesterEntry.pauseReason === "sessions_yield")
+  ) {
     return entries.length;
   }
   const previous = entries.map((entry) => entry.requesterTurnYielded);
+  const requesterSnapshot = requesterOwnsTurn ? structuredClone(requesterEntry) : undefined;
   for (const entry of entries) {
     entry.requesterTurnYielded = true;
   }
+  const requesterPaused =
+    requesterOwnsTurn &&
+    markSubagentRunPausedAfterYield({
+      entry: requesterEntry,
+      startedAt: requesterEntry.execution.startedAt,
+      endedAt: yieldedAt,
+    });
+  const changedRunIds = new Set(entries.map((entry) => entry.runId));
+  if (requesterPaused) {
+    changedRunIds.add(requesterEntry.runId);
+  }
+  if (changedRunIds.size === 0) {
+    return entries.length;
+  }
   try {
-    params.persistOrThrow(...entries.map((entry) => entry.runId));
+    params.persistOrThrow(...changedRunIds);
   } catch (error) {
     entries.forEach((entry, index) => {
       entry.requesterTurnYielded = previous[index];
     });
+    if (requesterSnapshot && requesterEntry) {
+      for (const key of Object.keys(requesterEntry)) {
+        Reflect.deleteProperty(requesterEntry, key);
+      }
+      Object.assign(requesterEntry, requesterSnapshot);
+    }
     throw error;
+  }
+  if (requesterPaused) {
+    params.resumeRequesterTaskAfterYield?.(requesterEntry, yieldedAt);
   }
   return entries.length;
 }

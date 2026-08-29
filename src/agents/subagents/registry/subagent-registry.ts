@@ -22,6 +22,7 @@ import {
   type SubagentRegistryDeps,
 } from "./subagent-registry-deps.js";
 import { ANNOUNCE_EXPIRY_MS, reconcileOrphanedRun } from "./subagent-registry-helpers.js";
+import { safeResumeSubagentTaskRunAfterYield } from "./subagent-registry-lifecycle-delivery.js";
 import { SubagentLifecycleController } from "./subagent-registry-lifecycle.js";
 import { createSubagentRegistryListener } from "./subagent-registry-listener.js";
 import {
@@ -423,6 +424,8 @@ const subagentListener = createSubagentRegistryListener({
   persist: persistSubagentRuns,
   refreshFrozenResultFromSession,
   completeSubagentRunWithRecovery: completionRuntime.completeSubagentRunWithRecovery,
+  resumeSubagentTaskRunAfterYield: (entry, resumedAt) =>
+    safeResumeSubagentTaskRunAfterYield(subagentLifecycleController.options, { entry, resumedAt }),
   warn: (message, meta) => log.warn(message, meta),
 });
 

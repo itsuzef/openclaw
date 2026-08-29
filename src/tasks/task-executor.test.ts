@@ -15,6 +15,7 @@ import {
   createRunningTaskRunCore as createRunningTaskRunOrNull,
   failTaskRunByRunIdCore as failTaskRunByRunId,
   recordTaskRunProgressByRunIdCore as recordTaskRunProgressByRunId,
+  resumeSubagentTaskRunByRunIdCore as resumeSubagentTaskRunByRunId,
   runTaskInFlowForOwner,
   setDetachedTaskDeliveryStatusByRunIdCore as setDetachedTaskDeliveryStatusByRunId,
   startTaskRunByRunIdCore as startTaskRunByRunId,
@@ -262,6 +263,49 @@ describe("task-executor", () => {
       expect(task?.startedAt).toBe(100);
       expect(task?.endedAt).toBe(250);
       expect(task?.terminalSummary).toBe("Done.");
+    });
+  });
+
+  it("reopens a yielded subagent task and its mirrored flow after a raced final-reply failure", async () => {
+    await withTaskExecutorStateDir(async () => {
+      const runId = "run-yield-raced-final-reply";
+      const childSessionKey = "agent:main:subagent:yield-race";
+      const task = createRunningTaskRun({
+        runtime: "subagent",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        childSessionKey,
+        runId,
+        task: "Continue after yielded children settle",
+        deliveryStatus: "pending",
+        startedAt: 100,
+      });
+      const flowId = task.parentFlowId;
+      if (!flowId) {
+        throw new Error("expected one-task mirrored flow");
+      }
+
+      failTaskRunByRunId({
+        runId,
+        runtime: "subagent",
+        sessionKey: childSessionKey,
+        endedAt: 200,
+        error: "subagent run ended before producing a final reply",
+      });
+      expect(getTaskById(task.taskId)?.status).toBe("failed");
+      expect(getTaskFlowById(flowId)?.status).toBe("failed");
+
+      resumeSubagentTaskRunByRunId({ runId, sessionKey: childSessionKey, resumedAt: 201 });
+
+      expect(getTaskById(task.taskId)).toMatchObject({
+        status: "running",
+        lastEventAt: 201,
+        deliveryStatus: "pending",
+      });
+      expect(getTaskById(task.taskId)?.endedAt).toBeUndefined();
+      expect(getTaskById(task.taskId)?.error).toBeUndefined();
+      expect(getTaskFlowById(flowId)?.status).toBe("running");
+      expect(getTaskFlowById(flowId)?.endedAt).toBeUndefined();
     });
   });
 

@@ -15,6 +15,7 @@ import {
   finalizeTaskRunByRunId,
   getDetachedTaskLifecycleRuntime,
   recordTaskRunProgressByRunId,
+  resumeSubagentTaskRunByRunId,
   setDetachedTaskDeliveryStatusByRunId,
   startTaskRunByRunId,
   tryRecoverTaskBeforeMarkLost,
@@ -225,6 +226,7 @@ describe("detached-task-runtime", () => {
       createQueuedTaskRun: vi.fn(() => queuedTask),
       createRunningTaskRun: vi.fn(() => runningTask),
       startTaskRunByRunId: vi.fn(() => updatedTasks),
+      resumeSubagentTaskRunByRunId: vi.fn(() => updatedTasks),
       recordTaskRunProgressByRunId: vi.fn(() => updatedTasks),
       finalizeTaskRunByRunId: vi.fn(() => updatedTasks),
       completeTaskRunByRunId: vi.fn(() => updatedTasks),
@@ -262,6 +264,7 @@ describe("detached-task-runtime", () => {
     ).toBe(runningTask);
 
     startTaskRunByRunId({ runId: "run-running", startedAt: 10 });
+    resumeSubagentTaskRunByRunId({ runId: "run-running", resumedAt: 15 });
     recordTaskRunProgressByRunId({ runId: "run-running", lastEventAt: 20 });
     finalizeTaskRunByRunId({ runId: "run-running", status: "succeeded", endedAt: 25 });
     completeTaskRunByRunId({ runId: "run-running", endedAt: 30 });
@@ -292,6 +295,12 @@ describe("detached-task-runtime", () => {
     const startArgs = requireFirstCallArg(vi.mocked(fakeRuntime.startTaskRunByRunId), "start");
     expect(startArgs.runId).toBe("run-running");
     expect(startArgs.startedAt).toBe(10);
+    const resumeArgs = requireFirstCallArg(
+      vi.mocked(fakeRuntime.resumeSubagentTaskRunByRunId),
+      "resume",
+    );
+    expect(resumeArgs.runId).toBe("run-running");
+    expect(resumeArgs.resumedAt).toBe(15);
     const progressArgs = requireFirstCallArg(
       vi.mocked(fakeRuntime.recordTaskRunProgressByRunId),
       "progress",

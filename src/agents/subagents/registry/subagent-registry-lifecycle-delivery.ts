@@ -13,6 +13,7 @@ import type { DetachedTaskFindResult } from "../../../tasks/detached-task-runtim
 import {
   completeTaskRunByRunId,
   failTaskRunByRunId,
+  resumeSubagentTaskRunByRunId,
   setDetachedTaskDeliveryStatusByRunId,
 } from "../../../tasks/detached-task-runtime.js";
 import { resolveRequiredCompletionDeliveryFailureTerminalResult } from "../../../tasks/task-completion-contract.js";
@@ -192,7 +193,7 @@ export const hasPriorRequesterDeliveryMirror = async (
 };
 
 const resolveSubagentTaskTarget = (
-  params: SubagentLifecycleOptions,
+  params: Pick<SubagentLifecycleOptions, "resolveSubagentTask">,
   entry: SubagentRunRecord,
   resolution = params.resolveSubagentTask(entry),
 ) => {
@@ -277,6 +278,27 @@ export const safeFinalizeSubagentTaskRun = (
       runId: maskLifecycleIdentifier(args.entry.runId, "run"),
       childSessionKey: maskLifecycleIdentifier(args.entry.childSessionKey, "session"),
       outcomeStatus: args.outcome.status,
+    });
+    return [];
+  }
+};
+
+export const safeResumeSubagentTaskRunAfterYield = (
+  params: Pick<SubagentLifecycleOptions, "resolveSubagentTask" | "warn">,
+  args: { entry: SubagentRunRecord; resumedAt?: number },
+) => {
+  const target = resolveSubagentTaskTarget(params, args.entry);
+  try {
+    return resumeSubagentTaskRunByRunId({
+      runId: target.runId,
+      sessionKey: target.sessionKey,
+      resumedAt: args.resumedAt,
+    });
+  } catch (err) {
+    params.warn("failed to resume yielded subagent background task state", {
+      error: buildSafeLifecycleErrorMeta(err),
+      runId: maskLifecycleIdentifier(args.entry.runId, "run"),
+      childSessionKey: maskLifecycleIdentifier(args.entry.childSessionKey, "session"),
     });
     return [];
   }

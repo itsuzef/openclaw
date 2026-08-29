@@ -482,6 +482,40 @@ export function markTaskRunningByRunId(params: {
   });
 }
 
+/** Reopens a subagent task only after its own run yields into a later turn. */
+export function resumeSubagentTaskRunByRunId(params: {
+  runId: string;
+  sessionKey?: string;
+  resumedAt?: number;
+}) {
+  ensureTaskRegistryReady();
+  const matches = getTasksByRunScope({
+    runId: params.runId,
+    runtime: "subagent",
+    sessionKey: params.sessionKey,
+  });
+  const updated: TaskRecord[] = [];
+  for (const task of matches) {
+    if (task.status === "cancelled") {
+      continue;
+    }
+    const resumed = updateTask(task.taskId, {
+      status: "running",
+      endedAt: undefined,
+      lastEventAt: params.resumedAt ?? Date.now(),
+      error: undefined,
+      terminalSummary: undefined,
+      terminalOutcome: undefined,
+      cleanupAfter: undefined,
+      deliveryStatus: task.deliveryStatus === "not_applicable" ? "not_applicable" : "pending",
+    });
+    if (resumed) {
+      updated.push(resumed);
+    }
+  }
+  return updated;
+}
+
 export function recordTaskProgressByRunId(params: {
   runId: string;
   runtime?: TaskRuntime;

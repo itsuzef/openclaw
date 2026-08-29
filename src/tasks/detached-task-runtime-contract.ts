@@ -149,6 +149,11 @@ export type DetachedTaskLifecycleRuntime = {
   createQueuedTaskRun: (params: DetachedTaskCreateParams) => TaskRecord | null;
   createRunningTaskRun: (params: DetachedRunningTaskCreateParams) => TaskRecord | null;
   startTaskRunByRunId: (params: DetachedTaskStartParams) => TaskRecord[];
+  resumeSubagentTaskRunByRunId: (params: {
+    runId: string;
+    sessionKey?: string;
+    resumedAt?: number;
+  }) => TaskRecord[];
   recordTaskRunProgressByRunId: (params: DetachedTaskProgressParams) => TaskRecord[];
   finalizeTaskRunByRunId?: (params: DetachedTaskFinalizeParams) => TaskRecord[];
   completeTaskRunByRunId: (params: DetachedTaskCompleteParams) => TaskRecord[];

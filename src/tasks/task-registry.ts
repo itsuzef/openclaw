@@ -20,6 +20,7 @@ export {
   markTaskRunningByRunId,
   markTaskTerminalById,
   recordTaskProgressByRunId,
+  resumeSubagentTaskRunByRunId,
   setTaskCleanupAfterById,
   setTaskRunDeliveryStatusByRunId,
   updateTaskNotifyPolicyById,

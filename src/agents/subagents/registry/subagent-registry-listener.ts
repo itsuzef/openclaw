@@ -22,6 +22,7 @@ export function createSubagentRegistryListener(config: {
     params: SubagentCompletionRequest,
     source: string,
   ) => Promise<void>;
+  resumeSubagentTaskRunAfterYield: (entry: SubagentRunRecord, resumedAt: number) => void;
   warn: (message: string, meta?: Record<string, unknown>) => void;
 }) {
   const {
@@ -31,6 +32,7 @@ export function createSubagentRegistryListener(config: {
     persist,
     refreshFrozenResultFromSession,
     completeSubagentRunWithRecovery,
+    resumeSubagentTaskRunAfterYield,
     warn,
   } = config;
   let listenerStarted = false;
@@ -93,6 +95,7 @@ export function createSubagentRegistryListener(config: {
             })
           ) {
             persist(entry.runId);
+            resumeSubagentTaskRunAfterYield(entry, endedAt);
           }
           return;
         }

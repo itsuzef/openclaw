@@ -37,6 +37,7 @@ import { getFlowTaskSummary } from "../../../tasks/task-executor.js";
 import {
   createManagedTaskFlow,
   finishFlow,
+  getTaskFlowById,
   requestFlowCancel,
 } from "../../../tasks/task-flow-runtime-internal.js";
 import {
@@ -3499,14 +3500,28 @@ describe("subagent registry seam flow", () => {
   it("accepts an authoritative late yield after non-kill cleanup started", async () => {
     mockPendingAgentWait();
     const runId = "run-yield-after-success-cleanup";
+    const childSessionKey = "agent:main:subagent:yield-after-success-cleanup";
     mod.registerSubagentRun({
       runId,
-      childSessionKey: "agent:main:subagent:yield-after-success-cleanup",
+      childSessionKey,
       task: "pause after terminal projection",
     });
     const lifecycleHandler = getLifecycleHandler();
     const run = findRequesterRun(runId);
     expect(run).toBeDefined();
+    const taskBeforeYield = findTaskByRunIdForStatus(runId);
+    const flowId = taskBeforeYield?.parentFlowId;
+    expect(flowId).toBeDefined();
+    finalizeTaskRunByRunId({
+      runId,
+      runtime: "subagent",
+      sessionKey: childSessionKey,
+      status: "failed",
+      endedAt: 222,
+      error: "subagent run ended before producing a final reply",
+    });
+    expect(findTaskByRunIdForStatus(runId)?.status).toBe("failed");
+    expect(getTaskFlowById(flowId!)?.status).toBe("failed");
     Object.assign(run!, {
       endedReason: SUBAGENT_ENDED_REASON_COMPLETE,
       execution: {
@@ -3535,6 +3550,8 @@ describe("subagent registry seam flow", () => {
     expect(run?.endedReason).toBeUndefined();
     expect(run?.execution.outcome).toBeUndefined();
     expect(run?.cleanupCompletedAt).toBeUndefined();
+    expect(findTaskByRunIdForStatus(runId)).toMatchObject({ status: "running" });
+    expect(getTaskFlowById(flowId!)?.status).toBe("running");
   });
 
   it("keeps yield terminals paused when the lifecycle event also signals abort (#92448)", async () => {

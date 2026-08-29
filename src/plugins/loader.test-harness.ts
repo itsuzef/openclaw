@@ -74,6 +74,7 @@ export function createDetachedTaskRuntimeStub(id: string): DetachedTaskLifecycle
     createQueuedTaskRun: () => fail("createQueuedTaskRun"),
     createRunningTaskRun: () => fail("createRunningTaskRun"),
     startTaskRunByRunId: () => fail("startTaskRunByRunId"),
+    resumeSubagentTaskRunByRunId: () => fail("resumeSubagentTaskRunByRunId"),
     recordTaskRunProgressByRunId: () => fail("recordTaskRunProgressByRunId"),
     finalizeTaskRunByRunId: () => fail("finalizeTaskRunByRunId"),
     completeTaskRunByRunId: () => fail("completeTaskRunByRunId"),

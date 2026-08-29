@@ -17,6 +17,7 @@ import {
   failTaskRunByRunIdCore,
   finalizeTaskRunByRunIdCore,
   recordTaskRunProgressByRunIdCore,
+  resumeSubagentTaskRunByRunIdCore,
   setDetachedTaskDeliveryStatusByRunIdCore,
   startTaskRunByRunIdCore,
 } from "./task-executor.js";
@@ -57,6 +58,7 @@ const DEFAULT_DETACHED_TASK_LIFECYCLE_RUNTIME: DetachedTaskLifecycleRuntime = {
   createQueuedTaskRun: createQueuedTaskRunCore,
   createRunningTaskRun: createRunningTaskRunCore,
   startTaskRunByRunId: startTaskRunByRunIdCore,
+  resumeSubagentTaskRunByRunId: resumeSubagentTaskRunByRunIdCore,
   recordTaskRunProgressByRunId: recordTaskRunProgressByRunIdCore,
   finalizeTaskRunByRunId: finalizeTaskRunByRunIdCore,
   completeTaskRunByRunId: completeTaskRunByRunIdCore,
@@ -86,6 +88,12 @@ export function startTaskRunByRunId(
   ...args: Parameters<DetachedTaskLifecycleRuntime["startTaskRunByRunId"]>
 ): ReturnType<DetachedTaskLifecycleRuntime["startTaskRunByRunId"]> {
   return getDetachedTaskLifecycleRuntime().startTaskRunByRunId(...args);
+}
+
+export function resumeSubagentTaskRunByRunId(
+  ...args: Parameters<DetachedTaskLifecycleRuntime["resumeSubagentTaskRunByRunId"]>
+): ReturnType<DetachedTaskLifecycleRuntime["resumeSubagentTaskRunByRunId"]> {
+  return getDetachedTaskLifecycleRuntime().resumeSubagentTaskRunByRunId(...args);
 }
 
 export function recordTaskRunProgressByRunId(

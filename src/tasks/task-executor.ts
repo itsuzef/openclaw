@@ -19,6 +19,7 @@ import {
   markTaskRunningByRunId,
   finalizeTaskRecordByRunId,
   recordTaskProgressByRunId,
+  resumeSubagentTaskRunByRunId,
   setTaskRunDeliveryStatusByRunId,
 } from "./runtime-internal.js";
 import {
@@ -177,6 +178,14 @@ export function startTaskRunByRunIdCore(params: {
   eventSummary?: string | null;
 }) {
   return markTaskRunningByRunId(params);
+}
+
+export function resumeSubagentTaskRunByRunIdCore(params: {
+  runId: string;
+  sessionKey?: string;
+  resumedAt?: number;
+}) {
+  return resumeSubagentTaskRunByRunId(params);
 }
 
 export function recordTaskRunProgressByRunIdCore(params: {

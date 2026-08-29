@@ -20,6 +20,7 @@ import {
   SUBAGENT_ENDED_REASON_KILLED,
 } from "./subagent-lifecycle-events.js";
 import { shouldSuppressSubagentRecoverySessionEffects } from "./subagent-recovery-state.js";
+import { safeResumeSubagentTaskRunAfterYield } from "./subagent-registry-lifecycle-delivery.js";
 import type { SubagentCompletionRequest, SubagentRunRecord } from "./subagent-registry.types.js";
 import { compareSubagentRunGeneration } from "./subagent-run-generation.js";
 import { resolveSubagentRunDeadlineMs } from "./subagent-run-timeout.js";
@@ -304,6 +305,16 @@ export class SubagentWaitManager {
           })
         ) {
           this.options.persist(entry.runId);
+          safeResumeSubagentTaskRunAfterYield(
+            {
+              resolveSubagentTask: this.options.resolveSubagentTask,
+              warn: (message, meta) => log.warn(message, meta),
+            },
+            {
+              entry,
+              resumedAt: wait.endedAt,
+            },
+          );
         }
         return;
       }

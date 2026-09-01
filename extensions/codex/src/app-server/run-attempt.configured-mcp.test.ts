@@ -284,6 +284,7 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
       toolsAllow: ["*"],
       manifestRegistry: params.preparedModelRuntime?.metadataSnapshot.manifestRegistry,
       autoApproveCodexAppServerApprovals: true,
+      codexApprovalFiltering: "scheduled",
     });
     expect(mcpMocks.staticFacade).toHaveBeenCalledWith(mcpMocks.staticCalls[0]);
 
@@ -339,6 +340,9 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     const threadStart = harness.requests.find((request) => request.method === "thread/start")
       ?.params as { config?: Record<string, unknown>; dynamicTools?: unknown } | undefined;
     expect(mcpMocks.staticCalls).toHaveLength(1);
+    // Ordinary attempts keep approval-requiring tools: interactive filtering,
+    // never the scheduled approval gate.
+    expect(mcpMocks.staticCalls[0]).toMatchObject({ codexApprovalFiltering: "interactive" });
     expect(threadStart?.config).not.toHaveProperty("mcp_servers");
     expect(JSON.stringify(threadStart?.dynamicTools ?? [])).toContain("fake__show");
 

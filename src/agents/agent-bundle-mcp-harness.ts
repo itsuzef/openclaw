@@ -177,6 +177,12 @@ export async function materializeStaticMcpToolsForScheduledHarnessRunCore(
     toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
     /** Exact established Codex yolo predicate; no other profile bypasses approval metadata. */
     autoApproveCodexAppServerApprovals?: boolean;
+    /**
+     * Scheduled runs have no interactive approver, so approval-requiring tools
+     * are omitted (the default). Interactive attempts keep them: dynamic MCP
+     * tools carry the same approval flow as requester-scoped MCP.
+     */
+    codexApprovalFiltering?: "scheduled" | "interactive";
     /** Mutation-only probes retire their isolated runtime after the snapshot. */
     retireSessionRuntimeAfterDispose?: boolean;
   },
@@ -219,18 +225,20 @@ export async function materializeStaticMcpToolsForScheduledHarnessRunCore(
         params.warn?.(message);
       },
     };
-    const allowed = filterScheduledCodexApproval(
-      applyHarnessToolPolicy(liveRuntime.tools, policyParams),
-      params.autoApproveCodexAppServerApprovals === true,
-      (message) => policyWarnings.push(message),
-    );
+    const filterCodexApproval = (tools: AnyAgentTool[]) =>
+      params.codexApprovalFiltering === "interactive"
+        ? tools
+        : filterScheduledCodexApproval(
+            tools,
+            params.autoApproveCodexAppServerApprovals === true,
+            (message) => policyWarnings.push(message),
+          );
+    const allowed = filterCodexApproval(applyHarnessToolPolicy(liveRuntime.tools, policyParams));
     // App views outlive this attempt, so bind their callable surface to the
     // same complete catalog and final policy before any model tool can mint one.
     liveRuntime.restrictAppTools?.(
-      filterScheduledCodexApproval(
+      filterCodexApproval(
         applyHarnessToolPolicy(liveRuntime.appTools ?? liveRuntime.tools, policyParams),
-        params.autoApproveCodexAppServerApprovals === true,
-        (message) => policyWarnings.push(message),
       ),
     );
     const diagnosticNotice = formatScheduledMcpDiagnosticNotice([

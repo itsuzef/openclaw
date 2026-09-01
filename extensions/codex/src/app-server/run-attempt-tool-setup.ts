@@ -336,6 +336,9 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
         autoApproveCodexAppServerApprovals: shouldAutoApproveCodexAppServerApprovals(
           connection.appServer,
         ),
+        // Scheduled runs have no interactive approver; ordinary attempts keep
+        // approval-requiring tools on the dynamic surface like requester-scoped MCP.
+        codexApprovalFiltering: authenticatedScheduledMode ? "scheduled" : "interactive",
         policyContext,
         warn: (message) => embeddedAgentLog.warn(message),
       })

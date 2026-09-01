@@ -235,6 +235,45 @@ describe("materializeStaticMcpToolsForScheduledHarnessRunCore", () => {
     await result?.dispose();
   });
 
+  it("splits scheduled approval filtering from interactive materialization", async () => {
+    const scheduledRuntime = makeRuntime({
+      sessionId: "approval-scheduled",
+      requesterSenderId: "unused",
+    });
+    delete scheduledRuntime.requesterScope;
+    mocks.getOrCreateSessionMcpRuntime.mockResolvedValue(scheduledRuntime);
+
+    // Scheduled runs have no interactive approver: the approval-requiring
+    // tool (no codexApproval metadata) is omitted with a diagnostic.
+    const scheduled = await materializeStaticMcpToolsForScheduledHarnessRunCore({
+      sessionId: "approval-scheduled",
+      workspaceDir: "/workspace",
+      toolsAllow: ["user-mail__inbox"],
+    });
+    expect(scheduled?.tools).toEqual([]);
+    expect(scheduled?.diagnosticNotice).toContain("requires interactive Codex approval");
+    await scheduled?.dispose();
+
+    const interactiveRuntime = makeRuntime({
+      sessionId: "approval-interactive",
+      requesterSenderId: "unused",
+    });
+    delete interactiveRuntime.requesterScope;
+    mocks.getOrCreateSessionMcpRuntime.mockResolvedValue(interactiveRuntime);
+
+    // Interactive attempts keep the tool: dynamic MCP tools carry the same
+    // approval flow as requester-scoped MCP.
+    const interactive = await materializeStaticMcpToolsForScheduledHarnessRunCore({
+      sessionId: "approval-interactive",
+      workspaceDir: "/workspace",
+      toolsAllow: ["user-mail__inbox"],
+      codexApprovalFiltering: "interactive",
+    });
+    expect(interactive?.tools.map((tool) => tool.name)).toEqual(["user-mail__inbox"]);
+    expect(interactive?.diagnosticNotice).toBeUndefined();
+    await interactive?.dispose();
+  });
+
   it("binds persistent app views to the same finite scheduled cap", async () => {
     const runtime = makeRuntime({ sessionId: "scheduled-app", requesterSenderId: "unused" });
     runtime.sessionKey = "agent:main:main";

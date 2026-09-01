@@ -261,8 +261,9 @@ describe("materializeStaticMcpToolsForScheduledHarnessRunCore", () => {
     delete interactiveRuntime.requesterScope;
     mocks.getOrCreateSessionMcpRuntime.mockResolvedValue(interactiveRuntime);
 
-    // Interactive attempts keep the tool: dynamic MCP tools carry the same
-    // approval flow as requester-scoped MCP.
+    // Interactive attempts keep the tool advertised: dynamic MCP tools carry
+    // the same delivery as requester-scoped MCP.
+    const interactiveCallTool = vi.spyOn(interactiveRuntime, "callTool");
     const interactive = await materializeStaticMcpToolsForScheduledHarnessRunCore({
       sessionId: "approval-interactive",
       workspaceDir: "/workspace",
@@ -271,7 +272,34 @@ describe("materializeStaticMcpToolsForScheduledHarnessRunCore", () => {
     });
     expect(interactive?.tools.map((tool) => tool.name)).toEqual(["user-mail__inbox"]);
     expect(interactive?.diagnosticNotice).toBeUndefined();
+
+    // ... but execution is blocked BEFORE any MCP call: the dynamic bridge
+    // calls execute directly, so the approval boundary lives there.
+    await expect(interactive!.tools[0]!.execute("blocked-call", {})).rejects.toThrow(
+      /requires interactive Codex approval/,
+    );
+    expect(interactiveCallTool).not.toHaveBeenCalled();
     await interactive?.dispose();
+  });
+
+  it("executes approval-satisfied tools on the interactive dynamic surface", async () => {
+    const runtime = makeRuntime({ sessionId: "approval-approve", requesterSenderId: "unused" });
+    delete runtime.requesterScope;
+    runtime.peekCatalog()!.servers["user-mail"]!.codexApprovalMode = "approve";
+    const callTool = vi.spyOn(runtime, "callTool");
+    mocks.getOrCreateSessionMcpRuntime.mockResolvedValue(runtime);
+
+    const result = await materializeStaticMcpToolsForScheduledHarnessRunCore({
+      sessionId: "approval-approve",
+      workspaceDir: "/workspace",
+      toolsAllow: ["user-mail__inbox"],
+      codexApprovalFiltering: "interactive",
+    });
+    expect(result?.tools.map((tool) => tool.name)).toEqual(["user-mail__inbox"]);
+    await expect(result!.tools[0]!.execute("allowed-call", {})).resolves.toBeDefined();
+    expect(callTool).toHaveBeenCalledOnce();
+    expect(callTool.mock.calls[0]?.slice(0, 2)).toEqual(["user-mail", "inbox"]);
+    await result?.dispose();
   });
 
   it("binds persistent app views to the same finite scheduled cap", async () => {

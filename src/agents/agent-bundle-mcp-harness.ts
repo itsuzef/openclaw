@@ -2,7 +2,7 @@
 import type { SessionToolOverrides } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginManifestRegistry } from "../plugins/manifest-registry.js";
-import { getPluginToolMeta } from "../plugins/tools.js";
+import { getPluginToolMeta, setPluginToolMeta } from "../plugins/tools.js";
 import {
   buildBundleMcpToolsFromCatalog,
   materializeBundleMcpToolsForRun,
@@ -82,6 +82,36 @@ function filterScheduledCodexApproval(
       `${mcp?.serverName ?? "configured MCP"}/${mcp?.toolName ?? tool.name}: requires interactive Codex approval (${mcp?.codexApproval?.mode ?? "auto"}); configure codex.defaultToolsApprovalMode="approve" or use the host-confirmed yolo profile`,
     );
     return false;
+  });
+}
+
+/**
+ * Interactive attempts advertise approval-requiring tools but must never run
+ * them without the approval the native mcp_servers route would collect: the
+ * dynamic bridge calls execute directly, so the boundary lives here.
+ */
+function guardInteractiveCodexApproval(
+  tools: readonly AnyAgentTool[],
+  autoApprove: boolean,
+): AnyAgentTool[] {
+  return tools.map((tool) => {
+    if (isScheduledCodexApprovalAllowed(tool, autoApprove)) {
+      return tool;
+    }
+    const meta = getPluginToolMeta(tool);
+    const mcp = meta?.mcp;
+    const guarded: AnyAgentTool = {
+      ...tool,
+      execute: async () => {
+        throw new Error(
+          `${mcp?.serverName ?? "configured MCP"}/${mcp?.toolName ?? tool.name}: requires interactive Codex approval (${mcp?.codexApproval?.mode ?? "auto"}) before it can run; configure codex.defaultToolsApprovalMode="approve" or use the host-confirmed yolo profile`,
+        );
+      },
+    };
+    if (meta) {
+      setPluginToolMeta(guarded, meta);
+    }
+    return guarded;
   });
 }
 
@@ -227,7 +257,7 @@ export async function materializeStaticMcpToolsForScheduledHarnessRunCore(
     };
     const filterCodexApproval = (tools: AnyAgentTool[]) =>
       params.codexApprovalFiltering === "interactive"
-        ? tools
+        ? guardInteractiveCodexApproval(tools, params.autoApproveCodexAppServerApprovals === true)
         : filterScheduledCodexApproval(
             tools,
             params.autoApproveCodexAppServerApprovals === true,

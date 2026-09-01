@@ -52,7 +52,7 @@ export async function startCodexAttemptRuntime(resources: CodexAttemptResources)
   const { toolBridge, toolState } = attemptTools;
   const developerInstructions = joinPresentSections(
     turnState.promptBuild.developerInstructions,
-    attemptTools.scheduledConfiguredMcp?.diagnosticNotice,
+    attemptTools.ownedConfiguredMcp?.diagnosticNotice,
   );
   const {
     params,
@@ -231,7 +231,7 @@ export async function startCodexAttemptRuntime(resources: CodexAttemptResources)
       cwd: effectiveCwd,
       developerInstructions: joinPresentSections(
         buildRenderedCodexDeveloperInstructions(),
-        attemptTools.scheduledConfiguredMcp?.diagnosticNotice,
+        attemptTools.ownedConfiguredMcp?.diagnosticNotice,
       ),
       prompt: turnState.codexTurnPromptText,
       tools: toolBridge.availableSpecs,

@@ -189,7 +189,7 @@ export async function cleanupCodexAttempt(
       prompt.context.attemptTools.scopedMcpTools?.dispose(),
     );
     await runCleanupStep("codex-scheduled-mcp-dispose", () =>
-      prompt.context.attemptTools.scheduledConfiguredMcp?.dispose(),
+      prompt.context.attemptTools.ownedConfiguredMcp?.dispose(),
     );
     await runCleanupStep("codex-abort-listener-remove", () => {
       runAbortController.signal.removeEventListener("abort", abortListener);

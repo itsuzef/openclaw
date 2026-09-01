@@ -222,6 +222,15 @@ export async function prepareCodexAttemptRuntime(connection: CodexAttemptConnect
     sandbox,
     { agentId: sessionAgentId, runtimeSessionKey: sandboxSessionKey, sandboxExecServerEnabled },
   );
+  // Static configured MCP reaches the model through exactly one surface. The
+  // native mcp_servers projection follows nativeToolSurfaceEnabled, so when the
+  // native surface is off the dynamic tool surface must own the configured
+  // static servers or they are invisible to the model entirely.
+  const ownsConfiguredMcpSurface =
+    ownsScheduledConfiguredMcpSurface ||
+    (!nativeToolSurfaceEnabled &&
+      (bundleMcpThreadConfig.staticServerNames.length > 0 ||
+        mutable.startupBinding?.configuredMcpOwnershipVersion === 1));
   preDynamicStartupStages.mark("native-tool-surface");
   const nativeProviderWebSearchSupport =
     resolveCodexWebSearchPlan({
@@ -281,6 +290,7 @@ export async function prepareCodexAttemptRuntime(connection: CodexAttemptConnect
     bundleManifestRegistry,
     authenticatedScheduledMode,
     ownsScheduledConfiguredMcpSurface,
+    ownsConfiguredMcpSurface,
     canResolveScheduledConfiguredMcpCreatorAuthority:
       mayResolveScheduledConfiguredMcpCreatorAuthority,
     codexMcpToolOverrides,

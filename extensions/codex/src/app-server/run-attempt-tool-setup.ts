@@ -49,7 +49,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     hookChannelId,
     codexMcpToolOverrides,
     authenticatedScheduledMode,
-    ownsScheduledConfiguredMcpSurface,
+    ownsConfiguredMcpSurface,
     canResolveScheduledConfiguredMcpCreatorAuthority,
   } = runtime;
   const {
@@ -322,7 +322,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     ...(params.memberRoleIds?.length ? { roleIds: [...params.memberRoleIds] } : {}),
   };
   const hasRequester = Object.keys(requester).length > 0;
-  const scheduledConfiguredMcp = ownsScheduledConfiguredMcpSurface
+  const ownedConfiguredMcp = ownsConfiguredMcpSurface
     ? await materializeStaticMcpToolsForScheduledHarnessRun({
         sessionId: params.sessionId,
         sessionKey: params.sessionKey,
@@ -367,11 +367,11 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     // MCP tools exactly like every other dynamic tool. Filter both lists with the
     // same rule so execution and advertised specs stay name-aligned.
     const scopedExecutable = filterCodexDynamicTools(
-      scheduledConfiguredMcp?.tools ?? scopedMcpTools?.tools ?? [],
+      [...(ownedConfiguredMcp?.tools ?? []), ...(scopedMcpTools?.tools ?? [])],
       pluginConfig,
     );
     const scopedAdvertised = filterCodexDynamicTools(
-      scheduledConfiguredMcp?.tools ?? scopedMcpTools?.advertisedTools ?? [],
+      [...(ownedConfiguredMcp?.tools ?? []), ...(scopedMcpTools?.advertisedTools ?? [])],
       pluginConfig,
     );
     const toolsWithScopedMcp =
@@ -549,8 +549,8 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
       tools: toolsWithScopedMcp,
       registeredTools: registeredWithScopedMcp,
       scopedMcpTools,
-      scheduledConfiguredMcp,
-      configuredMcpOwnershipVersion: ownsScheduledConfiguredMcpSurface ? (1 as const) : undefined,
+      ownedConfiguredMcp,
+      configuredMcpOwnershipVersion: ownsConfiguredMcpSurface ? (1 as const) : undefined,
       cronCreatorToolAllowlist,
       cronCreatorToolAllowlistCaptureRef,
       scheduledAppAuthoritySourceRef,
@@ -570,7 +570,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     // Materialized runtimes are attempt-owned only after this function returns.
     // Dispose here when filtering, schema projection, or bridge setup fails first.
     await scopedMcpTools?.dispose();
-    await scheduledConfiguredMcp?.dispose();
+    await ownedConfiguredMcp?.dispose();
     throw error;
   }
 }

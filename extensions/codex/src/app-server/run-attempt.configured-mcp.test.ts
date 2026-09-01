@@ -321,6 +321,37 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     expect(binding).not.toHaveProperty("userMcpServersFingerprint");
   });
 
+  it("materializes configured static MCP dynamically when the native tool surface is off", async () => {
+    const sessionFile = path.join(tempDir, "session-dynamic-surface-static-mcp.jsonl");
+    const params = createParams(
+      sessionFile,
+      path.join(tempDir, "workspace-dynamic-surface-static-mcp"),
+    );
+    configureFakeMcp(params);
+    // A narrowed runtime cap disables the Codex-native tool surface, so the
+    // native mcp_servers projection cannot deliver configured static servers.
+    params.toolsAllow = ["exec", "message", "bundle-mcp"];
+
+    const harness = createStartedThreadHarness();
+    const run = runCodexAppServerAttempt(params);
+    await harness.waitForMethod("turn/start");
+
+    const threadStart = harness.requests.find((request) => request.method === "thread/start")
+      ?.params as { config?: Record<string, unknown>; dynamicTools?: unknown } | undefined;
+    expect(mcpMocks.staticCalls).toHaveLength(1);
+    expect(threadStart?.config).not.toHaveProperty("mcp_servers");
+    expect(JSON.stringify(threadStart?.dynamicTools ?? [])).toContain("fake__show");
+
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await run;
+
+    expect(mcpMocks.dispose).toHaveBeenCalledOnce();
+    const binding = await readCodexAppServerBinding(sessionFile);
+    expect(binding).toMatchObject({ configuredMcpOwnershipVersion: 1 });
+    expect(binding).not.toHaveProperty("mcpServersFingerprint");
+    expect(binding).not.toHaveProperty("userMcpServersFingerprint");
+  });
+
   it("preserves bounded canonical continuity when scheduled MCP replaces ordinary ownership", async () => {
     const sessionFile = path.join(tempDir, "session-scheduled-mcp-ownership-continuity.jsonl");
     const workspaceDir = path.join(tempDir, "workspace-scheduled-mcp-ownership-continuity");
@@ -432,7 +463,7 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     expect(mcpMocks.captureCalls[0]!.storedNames).not.toContain("fake__show");
   });
 
-  it("captures a restricted ordinary turn without inventing intentionally disabled native MCP", async () => {
+  it("captures a restricted ordinary turn from its dynamically owned MCP surface", async () => {
     const sessionFile = path.join(tempDir, "session-native-mcp-restricted.jsonl");
     const params = createParams(sessionFile, path.join(tempDir, "workspace-native-mcp-restricted"));
     configureFakeMcp(params);
@@ -444,10 +475,13 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
     await expect(run).resolves.toBeDefined();
 
+    // The narrowed cap disables the native surface, so the explicitly allowed
+    // MCP tool is delivered dynamically instead of silently dropping out of
+    // the run; the capture then reflects the real executable surface.
     expect(harness.requests.map((request) => request.method)).not.toContain("mcpServerStatus/list");
-    expect(mcpMocks.staticCalls).toHaveLength(0);
+    expect(mcpMocks.staticCalls).toHaveLength(1);
     expect(mcpMocks.captureCalls).toHaveLength(1);
-    expect(mcpMocks.captureCalls[0]!.storedNames).not.toContain("fake__show");
+    expect(mcpMocks.captureCalls[0]!.storedNames).toContain("fake__show");
     expect(mcpMocks.captureCalls[0]!.provenance).toEqual({
       version: 1,
       source: "final-executable-surface",
